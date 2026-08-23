@@ -2124,6 +2124,16 @@ function resolveAutoClashExePath(instance) {
   return configuredPath;
 }
 
+// Discord IDs of the people allowed to press control buttons. Anyone who can
+// see the channel can otherwise click Start/Stop/Desktop-screenshot, so an
+// empty list here means "unrestricted" and is logged loudly on startup.
+function parseOwnerIds(raw) {
+  return String(raw || "")
+    .split(/[,;\s]+/)
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
 function autoControlConfig(token, fallbackChannelId) {
   const instances = parseAutoControlInstances(process.env.AUTOCONTROL_INSTANCES);
   return {
@@ -2131,6 +2141,7 @@ function autoControlConfig(token, fallbackChannelId) {
     sendPanelOnStart: parseBooleanEnv("AUTOCONTROL_SEND_PANEL_ON_START", true),
     autoUpdateEnabled: parseBooleanEnv("AUTOCONTROL_AUTO_UPDATE_ENABLED", false),
     token,
+    ownerIds: parseOwnerIds(process.env.DISCORD_OWNER_ID),
     channelId: optionalChannelId("AUTOCONTROL_CHANNEL_ID") || fallbackChannelId,
     channelName: (process.env.AUTOCONTROL_CHANNEL_NAME || "NullWebMonitor Panel").trim(),
     adbPath: process.env.AUTOCONTROL_ADB_PATH || "",
@@ -2957,6 +2968,7 @@ function applySetup(payload) {
     // instance and has no running/paused/down state of its own.
     updates.AUTOCONTROL_CHANNEL_NAME = String(discord.channelName || "").trim() || "NullWebMonitor Panel";
   }
+  if (discord.ownerId) updates.DISCORD_OWNER_ID = String(discord.ownerId).trim();
 
   const ntfy = payload.ntfy || {};
   if (ntfy.topic) {
@@ -4126,7 +4138,19 @@ async function handleLogLinesInteraction(control, interaction) {
   return true;
 }
 
+// Every control button (start/stop, close exe, full-desktop screenshot, ...)
+// runs on the host PC. Without this check, anyone who can see the channel —
+// not just the owner — can press them.
+function isAuthorizedInteractionUser(control, interaction) {
+  if (!control.ownerIds.length) return true;
+  return control.ownerIds.includes(interactionUserId(interaction));
+}
+
 async function handleGatewayInteraction(control, interaction) {
+  if (!isAuthorizedInteractionUser(control, interaction)) {
+    await respondInteraction(control.token, interaction, "You are not authorized to control this panel.").catch(() => {});
+    return;
+  }
   if (await handleLogLinesInteraction(control, interaction)) return;
   await handleControlInteraction(control, interaction);
 }
