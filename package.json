@@ -5,7 +5,7 @@
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
-    "test": "node test-web-server.js && node test-break.js && node test-parser.js && node test-config.js && node test-config-map.js && node test-setup.js && node test-port.js && node test-sessions.js && node test-routes.js",
+    "test": "node test-web-server.js && node test-break.js && node test-parser.js && node test-config.js && node test-config-map.js && node test-setup.js && node test-port.js && node test-sessions.js && node test-routes.js && node test-resilience.js",
     "check-secrets": "node scripts/check-secrets.js",
     "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File make-icons.ps1"
   },

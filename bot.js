@@ -624,6 +624,14 @@ async function renamePanelChannel(control) {
   }
 }
 
+// Discord allows two channel renames per ten minutes per channel. A bot that
+// flaps between running and paused burns that in seconds, and the 429 that
+// follows carries a retry-after measured in minutes, which used to stall the
+// caller. Track the last rename per channel and simply skip until the window
+// reopens — the next status change applies whatever the state is by then.
+const RENAME_MIN_INTERVAL_MS = 10 * 60 * 1000;
+const channelRenameHistory = new Map(); // channelId -> { lastAt, applied }
+
 async function updateChannelName(log, config) {
   const emoji =
     log.status === "stalled"
@@ -637,7 +645,12 @@ async function updateChannelName(log, config) {
 
   if (log.lastChannelName === nextName) return;
 
+  const history = channelRenameHistory.get(log.channelId);
+  const now = Date.now();
+  if (history && now - history.lastAt < RENAME_MIN_INTERVAL_MS) return;
+
   await config.renameChannel(log.channelId, nextName);
+  channelRenameHistory.set(log.channelId, { lastAt: now, applied: nextName });
   log.lastChannelName = nextName;
 }
 
@@ -1097,15 +1110,19 @@ async function sendPush(entry) {
 
   const tag = entry.severity === "error" ? "rotating_light" : entry.severity === "warn" ? "warning" : "information_source";
   try {
-    const response = await fetch(`${push.server}/${encodeURIComponent(push.topic)}`, {
+    // Published as JSON rather than through X-Title and friends. HTTP header
+    // values are latin-1 only, and an instance name or an em dash in the title
+    // made fetch throw before the request ever left. The JSON body is UTF-8.
+    const response = await fetch(push.server, {
       method: "POST",
-      headers: {
-        Title: `AutoClash: ${entry.kind}${entry.instance ? ` — ${entry.instance}` : ""}`,
-        Priority: entry.severity === "error" ? "high" : "default",
-        Tags: tag,
-      },
-      // ntfy takes the notification body as the raw request body.
-      body: String(entry.message || "").replace(/`/g, "").slice(0, 900),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        topic: push.topic,
+        title: `AutoClash: ${entry.kind}${entry.instance ? ` — ${entry.instance}` : ""}`,
+        message: String(entry.message || "").replace(/`/g, "").slice(0, 900),
+        priority: entry.severity === "error" ? 4 : 3,
+        tags: [tag],
+      }),
     });
     if (!response.ok) throw new Error(`ntfy responded ${response.status}`);
   } catch (error) {
@@ -1307,11 +1324,28 @@ async function detectCocConnectionLost(control, instance) {
   };
 }
 
+// A stopped emulator makes every visual check fail the same way, once per
+// interval, forever. Report the first one and then stand down for a while:
+// nothing useful happens until the device comes back.
+const VISUAL_FAILURE_BACKOFF_MS = 5 * 60 * 1000;
+
+function noteVisualFailure(log, error) {
+  const message = String(error && error.message ? error.message : error);
+  const summary = message.split(/\r?\n/)[0].slice(0, 200);
+
+  log.visualBackoffUntil = Date.now() + VISUAL_FAILURE_BACKOFF_MS;
+  if (log.lastVisualFailure === summary) return;
+
+  log.lastVisualFailure = summary;
+  console.error(`[${log.name}] visual check failed, pausing it for ${Math.round(VISUAL_FAILURE_BACKOFF_MS / 60000)} min: ${summary}`);
+}
+
 async function handleCocConnectionLostVisual(log, config) {
   if (!config.visualCheckEnabled) return;
   if (!adbReady(config.control, "the connection-lost check")) return;
 
   const now = Date.now();
+  if (log.visualBackoffUntil && now < log.visualBackoffUntil) return;
   if (now - log.lastVisualCheckAt < config.visualCheckIntervalSeconds * 1000) return;
   log.lastVisualCheckAt = now;
 
@@ -1323,9 +1357,13 @@ async function handleCocConnectionLostVisual(log, config) {
   try {
     result = await detectCocConnectionLost(config.control, instance);
   } catch (error) {
-    console.error(`[${log.name}] visual CoC check failed: ${error.message}`);
+    noteVisualFailure(log, error);
     return;
   }
+
+  // The device answered, so anything that failed before is history.
+  log.visualBackoffUntil = 0;
+  log.lastVisualFailure = "";
 
   // The check runs every 30s per instance and writes a full-size PNG each time.
   // Keep it only when it is actually evidence for an alert, otherwise it piles
@@ -3762,9 +3800,13 @@ async function checkStuckScreen(log, config) {
   try {
     hash = await frameHash(config.control, instance);
   } catch (error) {
-    console.error(`[stuck] ${instance.label}: frame hash failed: ${error.message}`);
+    // Same story as the connection-lost check: a stopped emulator fails this
+    // every time, so say it once and stand down.
+    noteVisualFailure(log, error);
     return;
   }
+  log.visualBackoffUntil = 0;
+  log.lastVisualFailure = "";
   if (!hash) return;
 
   const tolerance = Number(process.env.STUCK_HASH_TOLERANCE || 4);
@@ -4530,14 +4572,20 @@ async function main() {
       const summary = buildDailySummary(control, yesterday);
       const embed = dailySummaryEmbed(summary);
       webEmit({ type: "daily-summary", summary });
-      await config.sendPayload(control.channelId || logs[0]?.channelId, { embeds: [embed] });
+      // Returns nothing when Discord is off, and claiming "sent" in that case
+      // is just untrue in the console.
+      const posted = await config.sendPayload(control.channelId || logs[0]?.channelId, { embeds: [embed] });
       await sendPush({
         kind: "daily summary",
         severity: "info",
         instance: null,
         message: `${yesterday}: ${fullNumber(summary.totals.attacks)} attacks, ${compactNumber(summary.totals.gold)} gold, ${summary.incidents.errors} error(s).`,
       });
-      console.log(`[summary] Daily summary for ${yesterday} sent.`);
+      console.log(
+        posted
+          ? `[summary] Daily summary for ${yesterday} sent.`
+          : `[summary] Daily summary for ${yesterday} ready — Discord is off, it is on the panel only.`
+      );
     } catch (error) {
       console.error(`[summary] Could not send daily summary: ${error.message}`);
     }
