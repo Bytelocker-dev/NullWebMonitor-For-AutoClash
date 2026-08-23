@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <script src="/config-map.js"></script>
+<script src="/qr.js"></script>
 <title>NullWebMonitor</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0b0f16">
@@ -24,6 +25,37 @@
     --r: 14px; --r-sm: 9px;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
   }
+
+  /* A short banner on a card, tinted by what it is telling you. The left bar
+     carries the meaning, so these stay readable next to each other. */
+  .note {
+    margin-top: 10px; padding: 10px 12px 10px 13px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-left: 3px solid var(--muted); border-radius: var(--r-sm);
+    font-size: 14px;
+  }
+  .note b { font-weight: 600; }
+  .note .sub { margin-top: 2px; }
+  .note.brk { border-left-color: var(--brk); background: color-mix(in srgb, var(--brk) 7%, var(--panel-2)); }
+  .note.warn { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, var(--panel-2)); }
+  .note.bad { border-left-color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--panel-2)); }
+
+  /* Phone access: the QR is the point of the card, so it gets the room. */
+  .access { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 14px; }
+  .access .seg { align-self: stretch; justify-content: center; flex-wrap: wrap; }
+  .qr {
+    width: min(230px, 62vw); padding: 12px;
+    background: #fff; border-radius: var(--r); box-shadow: var(--shadow);
+  }
+  .access-url {
+    font-size: 13px; color: var(--muted); word-break: break-all; text-align: center;
+    background: var(--panel-2); border: 1px solid var(--line-soft);
+    border-radius: var(--r-sm); padding: 7px 11px;
+  }
+
+  /* A frame age that has drifted is worth noticing. */
+  [data-fps].stale { color: var(--warn); }
+
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
@@ -522,6 +554,11 @@
         </div>
       </div>
       <div class="card">
+        <h2>Open on your phone</h2>
+        <div class="sub">Scan with the phone camera. It has to be on the same Tailscale network or the same Wi-Fi.</div>
+        <div id="accessOut" class="access"></div>
+      </div>
+      <div class="card">
         <h2>Settings</h2>
         <div class="sub">Saved to .env. Restart the monitor to apply. Secrets stay hidden and are kept if left blank.</div>
         <form id="settingsForm"></form>
@@ -615,6 +652,35 @@ function breakLeft(log) {
   if (seconds < 60) return `${seconds}s left`;
   const minutes = Math.floor(seconds / 60);
   return minutes < 60 ? `${minutes}m left` : `${Math.floor(minutes / 60)}h ${minutes % 60}m left`;
+}
+
+// A countdown answers "how long"; the useful question on a phone at 3am is
+// "when". Show both, and give the wall clock the room.
+function breakBackAt(log) {
+  if (!log.breakUntil || Date.now() >= log.breakUntil) return "";
+  const at = new Date(log.breakUntil);
+  return String(at.getHours()).padStart(2, "0") + ":" + String(at.getMinutes()).padStart(2, "0");
+}
+
+function breakBanner(log) {
+  if (!isBreak(log)) return "";
+  const at = breakBackAt(log);
+  const left = breakLeft(log);
+  const why = '<div class="sub tiny">The bot closes Clash during a break, so a quiet log is expected.</div>';
+  if (!at) return '<div class="note brk"><b>On a humanized break</b>' + why + '</div>';
+  return '<div class="note brk"><b>On a break until ' + at + '</b>'
+    + (left ? ' <span class="sub tiny">(' + left + ')</span>' : "")
+    + why + '</div>';
+}
+
+// The visual checks stand down after a failure. Unsaid, a dead emulator looks
+// exactly like a healthy one: silence either way.
+function backoffBanner(log) {
+  if (!log.visualBackoffUntil || Date.now() >= log.visualBackoffUntil) return "";
+  const seconds = Math.round((log.visualBackoffUntil - Date.now()) / 1000);
+  const left = seconds < 60 ? seconds + "s" : Math.ceil(seconds / 60) + "m";
+  return '<div class="note warn"><b>Screen checks paused, retrying in ' + left + '</b>'
+    + '<div class="sub tiny">' + esc(log.lastVisualFailure || "the last check failed") + '</div></div>';
 }
 
 function statusTone(log) {
@@ -780,6 +846,7 @@ function renderTabs() {
           <span class="pill" data-logpill="${esc(log.name)}">${esc(statusLabel(log))}</span>
         </h2>
         <div class="sub tiny" data-logpath="${esc(log.name)}"></div>
+        <div data-lognotes="${esc(log.name)}"></div>
         <div data-loghealth="${esc(log.name)}"></div>
         <div class="logwrap" style="margin-top:12px">
           <pre class="log" id="log-${logSlug(log.name)}"></pre>
@@ -812,7 +879,7 @@ function selectTab(name) {
   if (name === "stats") { loadStats(); loadCharts(); loadSummary(); statsTimer = setInterval(loadStats, 15000); }
   else clearInterval(statsTimer);
   if (name === "discord") loadDiscord();
-  if (name === "settings") loadPush();
+  if (name === "settings") { loadPush(); loadAccess(); }
   if (name === "config") loadConfig();
   if (name === "guide") renderGuide();
   if (name === "incidents") { unseenIncidents = 0; loadIncidents(); renderTabs(); }
@@ -878,6 +945,8 @@ function render() {
     if (pill) { pill.textContent = statusLabel(log); pill.className = `pill ${statusTone(log)}`; }
     const path = $(`[data-logpath="${CSS.escape(log.name)}"]`);
     if (path) path.textContent = `${log.activePath || log.path} — last activity ${ago(log.lastActivity)}`;
+    const notes = $(`[data-lognotes="${CSS.escape(log.name)}"]`);
+    if (notes) notes.innerHTML = breakBanner(log) + backoffBanner(log);
     const health = $(`[data-loghealth="${CSS.escape(log.name)}"]`);
     if (health) health.innerHTML = healthHtml(log);
     // Seed the buffer from the server's recent lines the first time we see a log.
@@ -930,7 +999,9 @@ async function grabFrame(instanceId) {
     img.src = url;
     if (previous.startsWith("blob:")) URL.revokeObjectURL(previous);
     card.querySelector(".dot").classList.replace("idle", "on");
-    card.querySelector("[data-fps]").textContent = `${clock(Date.now())} · ${Math.round(blob.size / 1024)} KB`;
+    card.dataset.frameAt = String(Date.now());
+    card.dataset.frameSize = String(Math.round(blob.size / 1024));
+    paintFrameAge(card);
   } catch (error) {
     card.querySelector(".dot").classList.replace("on", "idle");
     const body = card.querySelector(".screen-body");
@@ -949,6 +1020,71 @@ function startLive() {
       if (liveTimers.has(instance.id)) liveTimers.set(instance.id, setTimeout(loop, liveRate));
     };
     liveTimers.set(instance.id, setTimeout(loop, 0));
+  }
+}
+
+// Ticks on its own so the age keeps counting up even when captures are off
+// or failing, which is exactly when a stale picture is most misleading.
+function paintFrameAge(card) {
+  const label = card.querySelector("[data-fps]");
+  if (!label) return;
+  const at = Number(card.dataset.frameAt || 0);
+  if (!at) { label.textContent = "no frame yet"; return; }
+  const seconds = Math.round((Date.now() - at) / 1000);
+  const age = seconds < 1 ? "just now" : seconds < 60 ? seconds + "s ago" : Math.floor(seconds / 60) + "m ago";
+  label.textContent = age + " · " + (card.dataset.frameSize || "0") + " KB";
+  label.classList.toggle("stale", seconds > 30);
+}
+
+setInterval(() => {
+  if (activeTab !== "live") return;
+  document.querySelectorAll("[data-screen]").forEach(paintFrameAge);
+}, 1000);
+
+// The wizard already works out how this machine is reachable; the panel just
+// never showed it again afterwards, which is when you actually want it.
+let accessChoice = 0;
+
+async function loadAccess() {
+  const out = $("#accessOut");
+  if (!out) return;
+  try {
+    const info = await api("/api/setup/state");
+    const port = info.port || location.port || 8477;
+    const urls = [];
+    if (info.access?.tailscaleIp) urls.push({ label: "Tailscale", url: "http://" + info.access.tailscaleIp + ":" + port });
+    if (info.access?.tailscaleName) urls.push({ label: "MagicDNS", url: "http://" + info.access.tailscaleName + ":" + port });
+    for (const ip of info.access?.lanAddresses || []) urls.push({ label: "Home network", url: "http://" + ip + ":" + port });
+
+    if (!urls.length) {
+      out.innerHTML = '<div class="sub tiny">No Tailscale or LAN address was detected. See the Guide tab.</div>';
+      return;
+    }
+
+    accessChoice = Math.min(accessChoice, urls.length - 1);
+    const chosen = urls[accessChoice];
+    const tabs = urls.map((entry, i) =>
+      '<button data-access="' + i + '"' + (i === accessChoice ? ' class="on"' : "") + '>' + esc(entry.label) + '</button>'
+    ).join("");
+
+    out.innerHTML = '<span class="seg">' + tabs + '</span>'
+      + '<div class="qr">' + qrSvg(chosen.url) + '</div>'
+      + '<code class="access-url">' + esc(chosen.url) + '</code>'
+      + '<button class="btn sm" id="copyAccess">Copy link</button>';
+
+    out.querySelectorAll("[data-access]").forEach((button) => {
+      button.addEventListener("click", () => { accessChoice = Number(button.dataset.access); loadAccess(); });
+    });
+    $("#copyAccess").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(chosen.url);
+        toast("Link copied.");
+      } catch {
+        toast("Copy failed - select the address instead.", true);
+      }
+    });
+  } catch (error) {
+    if (error.message !== "Signed out.") out.innerHTML = '<div class="sub tiny">' + esc(error.message) + '</div>';
   }
 }
 
