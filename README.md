@@ -35,6 +35,10 @@ Installs to your phone's home screen as a PWA.
 - [Tailscale](https://tailscale.com/download) — free, and the recommended way to
   reach the panel from your phone
 
+## Optional
+- [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) —
+  alternative to Tailscale if you want to expose the panel via your own domain
+  instead of a private mesh network
 ---
 
 ## Install
