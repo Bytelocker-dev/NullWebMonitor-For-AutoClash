@@ -1,0 +1,30 @@
+{
+  "name": "nullwebmonitor",
+  "version": "1.0.0",
+  "description": "Self-hosted web control panel for AutoClash — live view, stats, logs, incidents and remote config, reachable from your phone over Tailscale.",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "test": "node test-web-server.js && node test-break.js && node test-parser.js && node test-config.js && node test-config-map.js && node test-setup.js && node test-port.js && node test-sessions.js && node test-routes.js",
+    "check-secrets": "node scripts/check-secrets.js",
+    "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File make-icons.ps1"
+  },
+  "keywords": [
+    "autoclash",
+    "clash-of-clans",
+    "monitor",
+    "self-hosted",
+    "tailscale",
+    "pwa"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "win32"
+  ],
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}

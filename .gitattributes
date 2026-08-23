@@ -1,0 +1,10 @@
+* text=auto
+
+# Windows-only. The launcher breaks with LF endings: cmd.exe mis-parses
+# `goto` labels, and PowerShell is checked out beside it, so keep both CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.ico binary

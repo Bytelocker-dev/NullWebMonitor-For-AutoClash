@@ -1,0 +1,1792 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<script src="/config-map.js"></script>
+<title>NullWebMonitor</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0b0f16">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NullWebMonitor">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  :root {
+    --bg: #0b0f16; --panel: #141a24; --panel-2: #1b2331; --panel-3: #222c3d;
+    --line: #2b3648; --line-soft: #202938;
+    --text: #e8eef6; --muted: #8b9ab0; --dim: #63728a;
+    --accent: #4c8dff; --accent-dim: #2a5db8;
+    --ok: #2fa855; --warn: #d9a222; --bad: #e0453f; --brk: #ff8c1a;
+    --r: 14px; --r-sm: 9px;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%; overscroll-behavior-y: none;
+  }
+  button, input, select { font: inherit; }
+  button { cursor: pointer; }
+
+  /* ---------------- buttons ---------------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: var(--r-sm);
+    padding: 0 14px; height: 38px; min-width: 0;
+    font-size: 14px; font-weight: 500; white-space: nowrap;
+    transition: background .13s, border-color .13s, opacity .13s;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .btn:hover:not(:disabled) { background: var(--panel-3); border-color: #38455c; }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover:not(:disabled) { background: #5f9aff; border-color: #5f9aff; }
+  .btn.good { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .btn.good:hover:not(:disabled) { background: #37bd61; border-color: #37bd61; }
+  .btn.bad { background: var(--bad); border-color: var(--bad); color: #fff; }
+  .btn.bad:hover:not(:disabled) { background: #ec524c; border-color: #ec524c; }
+  .btn.ghost { background: transparent; }
+  .btn.sm { height: 32px; padding: 0 11px; font-size: 13px; }
+  .btn.block { width: 100%; }
+
+  .btn-group { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); }
+  .btn-group.two { grid-template-columns: repeat(2, 1fr); }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* ---------------- login ---------------- */
+  #login { display: none; min-height: 100dvh; place-items: center; padding: 24px; }
+  #login.show { display: grid; }
+  #login form {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 30px; width: min(370px, 100%); display: grid; gap: 15px; box-shadow: var(--shadow);
+  }
+  #login h1 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
+  #login .sub { margin-top: -8px; }
+  input[type=password], input[type=text], select {
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    border-radius: var(--r-sm); padding: 0 12px; height: 40px; width: 100%;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent-dim); outline-offset: -1px; }
+
+  /* ---------------- setup wizard ---------------- */
+  #setup { display: none; min-height: 100dvh; padding: 24px 16px; }
+  #setup.show { display: block; }
+  #setup #setupBody { max-width: 620px; margin: 0 auto; }
+  .wiz h2 { font-size: 19px; margin: 0 0 4px; }
+  .wiz-steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 16px; }
+  .wiz-dot {
+    font-size: 11px; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--dim);
+  }
+  .wiz-dot.on { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .wiz-dot.done { color: #6fdc93; border-color: #2a6b41; }
+  .wiz-ok {
+    margin-top: 12px; padding: 12px 14px; border-radius: var(--r-sm);
+    border: 1px solid #2a6b41; background: rgba(47,168,85,.08); font-size: 13.5px;
+  }
+  .wiz-warn {
+    margin-top: 12px; padding: 12px 14px; border-radius: var(--r-sm);
+    border: 1px solid #6a5316; background: rgba(217,162,34,.08); font-size: 13.5px;
+  }
+  .wiz code, .guide-content code {
+    font: 12px ui-monospace, Consolas, monospace; background: rgba(255,255,255,.06);
+    padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere;
+  }
+
+  /* ---------------- guide ---------------- */
+  details.guide { padding: 0; }
+  details.guide > summary {
+    cursor: pointer; padding: 15px 16px; font-size: 14.5px; font-weight: 600;
+    list-style: none;
+  }
+  details.guide > summary::-webkit-details-marker { display: none; }
+  details.guide > summary::before { content: "▸ "; color: var(--dim); }
+  details.guide[open] > summary::before { content: "▾ "; }
+  .guide-content { padding: 0 16px 16px; }
+  .guide-content p { margin: 8px 0; }
+  ol.guide-list, ul.guide-list { margin: 8px 0; padding-left: 20px; color: var(--muted); font-size: 13.5px; }
+  ol.guide-list li, ul.guide-list li { margin: 6px 0; }
+  .guide-warn {
+    margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm);
+    border: 1px solid #6a5316; background: rgba(217,162,34,.08);
+    font-size: 13px; color: var(--text);
+  }
+
+  /* ---------------- shell ---------------- */
+  #app { display: none; min-height: 100dvh; flex-direction: column; }
+  #app.show { display: flex; }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 16px calc(11px + env(safe-area-inset-top)) 16px;
+    padding-top: max(11px, env(safe-area-inset-top));
+    background: var(--panel); border-bottom: 1px solid var(--line-soft);
+  }
+  header h1 { font-size: 16px; margin: 0; flex: 1; letter-spacing: -.01em; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot.on {
+    background: var(--ok); box-shadow: 0 0 0 3px rgba(47,168,85,.16);
+    animation: pulse-ok 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse-ok {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(47,168,85,.16); }
+    50%      { box-shadow: 0 0 0 6px rgba(47,168,85,.04); }
+  }
+  @keyframes pulse-brk {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(255,140,26,.20); }
+    50%      { box-shadow: 0 0 0 7px rgba(255,140,26,.05); }
+  }
+  /* Stalled blinks rather than breathes — it wants attention, not ambience. */
+  @keyframes blink-bad {
+    0%, 45%  { box-shadow: 0 0 0 3px rgba(224,69,63,.30); opacity: 1; }
+    55%, 95% { box-shadow: 0 0 0 3px rgba(224,69,63,.05); opacity: .55; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dot, .dot.on, .dot.brk, .dot.stalled { animation: none !important; }
+  }
+  .dot.idle { background: var(--dim); box-shadow: none; }
+  .dot.brk { background: var(--brk); box-shadow: 0 0 0 3px rgba(255,140,26,.18); animation: pulse-brk 2.8s ease-in-out infinite; }
+  .dot.stalled { background: var(--bad); box-shadow: 0 0 0 3px rgba(224,69,63,.18); animation: blink-bad 1.6s steps(1, end) infinite; }
+
+  nav {
+    display: flex; gap: 2px; padding: 0 10px; overflow-x: auto;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    scrollbar-width: none; position: sticky; top: 0; z-index: 6;
+  }
+  nav::-webkit-scrollbar { display: none; }
+  nav button {
+    background: none; border: 0; border-bottom: 2px solid transparent;
+    color: var(--muted); padding: 11px 12px; white-space: nowrap; font-size: 14px; font-weight: 500;
+  }
+  nav button:hover { color: var(--text); }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  nav button .badge {
+    display: inline-block; margin-left: 6px; min-width: 7px; height: 7px;
+    border-radius: 50%; background: var(--ok); vertical-align: middle;
+  }
+  nav button .badge.off { background: var(--dim); }
+  nav button .badge.warn { background: var(--warn); }
+  nav button .badge.brk { background: var(--brk); }
+  nav button .badge.stalled { background: var(--bad); }
+  .incident-img {
+    width: 100%; margin-top: 11px; display: block;
+    border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: #04070c;
+  }
+
+  main { flex: 1; padding: 16px; max-width: 1180px; width: 100%; margin: 0 auto; }
+  main > section { display: grid; gap: 14px; }
+  section[hidden] { display: none !important; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line-soft);
+    border-radius: var(--r); padding: 16px;
+    transition: border-color .18s;
+  }
+  .card:hover { border-color: var(--line); }
+  main > section { animation: fade-in .18s ease-out; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    main > section { animation: none; }
+  }
+  .card > h2 {
+    margin: 0 0 3px; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card > h2 .spacer { flex: 1; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .sub.tiny { font-size: 12px; color: var(--dim); }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); }
+  .divider { height: 1px; background: var(--line-soft); margin: 14px 0; }
+
+  .banner {
+    display: none; background: linear-gradient(180deg, #3a2d09, #2f2508);
+    border: 1px solid #6a5316; border-radius: var(--r); padding: 14px 16px;
+  }
+  .banner.show { display: block; }
+  .banner strong { color: #f0c650; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+  }
+  .pill { transition: border-color .2s, background .2s; }
+  .pill.active { color: #6fdc93; border-color: #2a6b41; background: rgba(47,168,85,.1); }
+  .pill.stalled { color: #ff8a85; border-color: #7a2f2c; background: rgba(224,69,63,.1); }
+  .pill.paused, .pill.finished, .pill.starting { color: #f0c650; border-color: #6a5316; background: rgba(217,162,34,.1); }
+  .sev-err { color: #ff8a85; font-weight: 600; }
+  .sev-warn { color: #f0c650; font-weight: 600; }
+  .pill.brk { color: #ffab52; border-color: #8a4d10; background: rgba(255,140,26,.12); }
+
+  /* ---------------- logs ---------------- */
+  .logwrap { position: relative; }
+  pre.log {
+    background: #070a10; border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+    padding: 12px 13px; margin: 0;
+    height: min(62dvh, 640px); overflow: auto;
+    font: 12.5px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace;
+    white-space: pre-wrap; overflow-wrap: anywhere; color: #b9c6d8;
+    scrollbar-width: thin;
+  }
+  pre.log .t { color: var(--dim); }
+  pre.log .ev { color: #f0c650; }
+  .jump {
+    position: absolute; right: 14px; bottom: 12px; display: none;
+    background: var(--accent); color: #fff; border: 0; border-radius: 999px;
+    padding: 7px 14px; font-size: 12.5px; font-weight: 600; box-shadow: var(--shadow);
+  }
+  .jump.show { display: block; }
+
+  /* ---------------- live screens ---------------- */
+  .screens { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+  .screen-card { background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--r); overflow: hidden; }
+  .screen-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; }
+  .screen-head b { font-size: 14px; font-weight: 600; }
+  .screen-head .spacer { flex: 1; }
+  .screen-body { position: relative; background: #04070c; aspect-ratio: 16 / 9; }
+  .screen-body img { width: 100%; height: 100%; object-fit: contain; display: block; animation: fade-in .2s ease-out; }
+  .screen-body .msg {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--dim); font-size: 13px; text-align: center; padding: 16px;
+  }
+  .screen-foot { padding: 9px 14px; display: flex; gap: 8px; align-items: center; }
+
+  .screen-body.tappable { cursor: crosshair; }
+  .screen-body.tappable::after {
+    content: "TAP MODE"; position: absolute; top: 8px; left: 8px;
+    background: rgba(255,140,26,.9); color: #1a1005; font-size: 10px; font-weight: 700;
+    letter-spacing: .08em; padding: 3px 7px; border-radius: 5px;
+  }
+  .chart { width: 100%; height: auto; display: block; margin-top: 12px; overflow: visible; }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 9px; }
+  .chart-legend span { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+  .chart-legend i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  /* ---------------- stats ---------------- */
+  .stats { display: grid; gap: 9px; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); margin-top: 13px; }
+  .stat { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 10px 12px; }
+  .stat b {
+    display: block; font-size: 10.5px; color: var(--dim);
+    text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; font-weight: 600;
+  }
+  .stat strong { color: #fff; font-weight: 600; }
+  code { font: 12px ui-monospace, Consolas, monospace; color: #9fb0c8; background: rgba(255,255,255,.05); padding: 1px 5px; border-radius: 4px; }
+  .stat code { background: none; padding: 0; letter-spacing: -.5px; }
+  .base-head {
+    display: flex; align-items: center; gap: 7px;
+    margin: 16px 0 2px; font-size: 13px; font-weight: 700;
+    color: var(--text); letter-spacing: .01em;
+    padding-top: 13px; border-top: 1px solid var(--line-soft);
+  }
+  .base-head:first-child { margin-top: 8px; padding-top: 0; border-top: 0; }
+  .base-head.builder { color: #ffab52; }
+  .base-sub {
+    font-size: 10.5px; color: var(--dim); text-transform: uppercase;
+    letter-spacing: .06em; font-weight: 600; margin: 14px 0 7px;
+  }
+  .rate { display: block; font-size: 11.5px; color: var(--dim); margin-top: 1px; }
+  .stat b + .rate { margin-top: 2px; }
+
+  .starrow { display: flex; align-items: center; gap: 9px; margin-top: 5px; }
+  .starlabel { font-size: 12px; color: var(--muted); width: 22px; flex: none; }
+  .starbar {
+    flex: 1; height: 7px; border-radius: 4px; background: var(--panel-2);
+    overflow: hidden; min-width: 40px;
+  }
+  .starbar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+  .starval { font-size: 12.5px; color: var(--text); font-weight: 600; white-space: nowrap; }
+
+  .lockbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border-radius: var(--r); padding: 14px 16px; border: 1px solid var(--line-soft);
+    background: var(--panel);
+  }
+  .lockbar.locked { border-color: #6a5316; background: linear-gradient(180deg, #3a2d09, #2f2508); }
+  .lockbar.open { border-color: #2a6b41; background: rgba(47,168,85,.07); }
+  .cfg-field { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
+  .cfg-field:last-child { border-bottom: 0; }
+  .cfg-key { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+  .rawkey { display: block; font-size: 10.5px; color: var(--dim); font-family: ui-monospace, Consolas, monospace; margin-top: 2px; }
+  .cfg-field select { width: min(230px, 46vw); height: 34px; }
+  .cfg-field input[type=text], .cfg-field input[type=number] { width: min(230px, 46vw); height: 34px; }
+  .cfg-field textarea {
+    width: min(320px, 60vw); min-height: 62px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px;
+    font: 12px ui-monospace, Consolas, monospace; resize: vertical;
+  }
+  .cfg-field input:disabled, .cfg-field textarea:disabled, .cfg-field .sw.disabled { opacity: .45; cursor: not-allowed; }
+  .sw { width: 44px; height: 25px; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--line); position: relative; cursor: pointer; flex: none; }
+  .sw i { position: absolute; top: 2px; left: 2px; width: 19px; height: 19px; border-radius: 50%; background: var(--muted); transition: left .14s, background .14s; }
+  .sw.on { background: rgba(47,168,85,.25); border-color: #2a6b41; }
+  .sw.on i { left: 21px; background: var(--ok); }
+  details.cfg-group { margin-top: 14px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 10px 13px; }
+  details.cfg-group > summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  details.cfg-group[open] > summary { margin-bottom: 6px; }
+  .dirty { color: #f0c650; }
+  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px; }
+  .seg button { background: none; border: 0; color: var(--muted); padding: 6px 13px; border-radius: 7px; font-size: 13px; font-weight: 500; }
+  .seg button.on { background: var(--accent); color: #fff; }
+
+  /* ---------------- settings ---------------- */
+  label.field { display: grid; gap: 5px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+  label.field input { color: var(--text); font-weight: 400; letter-spacing: 0; }
+  #settingsForm { display: grid; gap: 13px; margin-top: 13px; }
+  .setting-group { margin-top: 6px; }
+  .setting-group > h3 {
+    font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em;
+    margin: 16px 0 0; font-weight: 700;
+  }
+
+  /* ---------------- toast ---------------- */
+  #toast {
+    position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(8px);
+    background: var(--panel-3); border: 1px solid var(--line); border-radius: var(--r-sm);
+    padding: 11px 17px; max-width: min(92vw, 520px); box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; z-index: 60;
+    font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { border-color: #7a2f2c; }
+
+  @media (max-width: 560px) {
+    main { padding: 13px; }
+    .btn-group { grid-template-columns: repeat(2, 1fr); }
+    pre.log { height: min(58dvh, 520px); font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="setup"><div id="setupBody"></div></div>
+
+<div id="login">
+  <form id="loginForm">
+    <h1>NullWebMonitor</h1>
+    <div class="sub">Sign in to control the bot.</div>
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+    <button class="btn primary block" type="submit">Sign in</button>
+    <div class="sub" id="loginError" style="color:#ff8a85"></div>
+  </form>
+</div>
+
+<div id="app">
+  <header>
+    <span class="dot" id="liveDot" title="Live connection"></span>
+    <h1>NullWebMonitor</h1>
+    <button class="btn sm ghost" id="logout">Sign out</button>
+  </header>
+
+  <nav id="tabs"></nav>
+
+  <main>
+    <div class="banner" id="updateBanner"></div>
+
+    <section id="tab-control">
+      <div class="card" id="statusStrip"></div>
+      <div class="grid" id="instances"></div>
+      <div class="card">
+        <h2>All windows</h2>
+        <div class="sub">Targets windows marked AutoStart, or every window if none are.</div>
+        <div class="btn-group" style="margin-top:13px">
+          <button class="btn good" data-global="start">Start all</button>
+          <button class="btn" data-global="pause">Pause all</button>
+          <button class="btn bad" data-global="stop">Stop all</button>
+          <button class="btn" data-global="show">Show all</button>
+          <button class="btn" data-global="hide">Hide all</button>
+          <button class="btn" id="fullDesktop">Desktop shot</button>
+        </div>
+        <div class="divider"></div>
+        <div class="btn-row">
+          <button class="btn bad sm" id="restartBot">Restart monitor</button>
+          <span class="sub tiny" style="align-self:center">AutoClash keeps running; only this monitor restarts.</span>
+        </div>
+        <div id="desktopOut"></div>
+      </div>
+    </section>
+
+    <section id="tab-live" hidden>
+      <div class="card">
+        <h2>
+          Live emulator view
+          <span class="spacer"></span>
+          <span class="seg" id="liveRate">
+            <button data-rate="1000">1s</button>
+            <button data-rate="2000" class="on">2s</button>
+            <button data-rate="5000">5s</button>
+            <button data-rate="0">Off</button>
+          </span>
+        </h2>
+        <div class="sub">Auto-captured over ADB and downscaled, so it stays light on mobile data.</div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn sm" id="tapToggle">Tap mode: off</button>
+          <span class="sub tiny" style="align-self:center">With tap mode on, clicking a screen taps the emulator there.</span>
+        </div>
+      </div>
+      <div class="screens" id="screens"></div>
+    </section>
+
+    <section id="tab-stats" hidden>
+      <div class="card">
+        <h2>
+          Stats
+          <span class="spacer"></span>
+          <span class="seg" id="statsRange">
+            <button data-range="session" class="on">Session</button>
+            <button data-range="daily">Daily</button>
+          </span>
+        </h2>
+        <div class="sub">Read from AutoClash's stats.db. Refreshes every 15 seconds.</div>
+      </div>
+      <div id="statsOut" class="grid"></div>
+      <div class="card">
+        <h2>Trends<span class="spacer"></span><span class="sub tiny">last 14 days</span></h2>
+        <div class="sub">Per-day totals and per-session rates from stats.db history.</div>
+        <div id="chartsOut"></div>
+      </div>
+      <div class="card">
+        <h2>Today so far<span class="spacer"></span><button class="btn sm" id="reloadSummary">Refresh</button></h2>
+        <div id="summaryOut" class="sub">Loading...</div>
+        <div class="sub tiny" style="margin-top:10px">The scheduled summary posted to Discord each morning covers the previous full day.</div>
+      </div>
+    </section>
+
+    <section id="tab-config" hidden>
+      <div class="card">
+        <h2>Bot settings<span class="spacer"></span><span class="seg" id="cfgInstance"></span></h2>
+        <div class="sub">AutoClash rewrites these files while it runs, so editing is only possible once the exe is closed. Every save keeps a backup.</div>
+      </div>
+      <div id="cfgLock"></div>
+      <div id="cfgBody"></div>
+    </section>
+
+    <section id="tab-incidents" hidden>
+      <div class="card">
+        <h2>
+          Incidents
+          <span class="spacer"></span>
+          <span class="seg" id="incidentFilter">
+            <button data-sev="all" class="on">All</button>
+            <button data-sev="problem">Problems</button>
+            <button data-sev="withpic">With photo</button>
+          </span>
+        </h2>
+        <div class="sub">Crashes, recoveries and updates, with a screenshot saved at the moment it happened. Kept separately from the temporary screenshots, so these are not swept away.</div>
+      </div>
+      <div id="incidentsOut" class="grid"></div>
+    </section>
+
+    <section id="tab-discord" hidden>
+      <div class="card">
+        <h2>Discord bot <span class="spacer"></span><span id="discordPill" class="pill">unknown</span></h2>
+        <div class="sub" id="discordInfo">Loading...</div>
+        <div class="btn-group two" style="margin-top:13px">
+          <button class="btn good" id="discordStart">Start bot</button>
+          <button class="btn bad" id="discordStop">Stop bot</button>
+        </div>
+        <div class="divider"></div>
+        <div class="sub tiny">
+          Starting posts the control panel to your channel and reconnects the gateway.
+          Stopping closes it and silences all Discord messages. The web panel and the
+          AutoClash monitoring keep running either way.
+        </div>
+      </div>
+      <div class="card">
+        <h2>Channels</h2>
+        <div id="discordChannels" class="sub"></div>
+      </div>
+    </section>
+
+    <section id="tab-guide" hidden>
+      <div class="card">
+        <h2>Setup &amp; User Guide</h2>
+        <div class="sub">Everything you need to configure and run this, including the Discord walkthrough.</div>
+      </div>
+      <div id="guideBody"></div>
+    </section>
+
+    <section id="tab-settings" hidden>
+      <div class="card">
+        <h2>Phone alerts<span class="spacer"></span><span id="pushPill" class="pill">off</span></h2>
+        <div class="sub" id="pushInfo"></div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn" id="pushTest">Send test notification</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Settings</h2>
+        <div class="sub">Saved to .env. Restart the monitor to apply. Secrets stay hidden and are kept if left blank.</div>
+        <form id="settingsForm"></form>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn primary" id="saveSettings">Save</button>
+          <button class="btn" id="reloadSettings">Reload</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const SECRET_KEYS = ["DISCORD_TOKEN", "WEB_PASSWORD", "WEB_PASSWORD_HASH"];
+const MAX_LOG_CHARS = 140000;
+
+let state = { instances: [], logs: [], updates: {}, discord: {} };
+let socket = null;
+let activeTab = "control";
+let logBuffers = new Map();   // log name -> text, kept whether or not its tab is open
+let liveTimers = new Map();
+let liveRate = 2000;
+let statsRange = "session";
+let statsTimer = null;
+let allIncidents = [];
+let incidentFilter = "all";
+let tapMode = false;
+let unseenIncidents = 0;
+
+// ---------- helpers ----------
+
+function toast(text, isError = false) {
+  const el = $("#toast");
+  el.textContent = String(text).split("\n").slice(0, 3).join("\n").slice(0, 300);
+  el.classList.toggle("err", isError);
+  el.classList.add("show");
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove("show"), isError ? 5000 : 3000);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, { credentials: "same-origin", ...options });
+  if (res.status === 401) { showLogin(); throw new Error("Signed out."); }
+  const type = res.headers.get("content-type") || "";
+  if (!type.includes("application/json")) {
+    if (!res.ok) throw new Error(`Request failed (${res.status})`);
+    return res;
+  }
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+  return body;
+}
+
+function post(path, body) {
+  return api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+}
+
+const esc = (text) => String(text ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+// Discord embeds use **bold**; render it instead of showing the asterisks.
+// Discord markup -> HTML: **bold**, `monospace`, newlines.
+const md = (text) => esc(text)
+  .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+  .replace(/`([^`]+)`/g, "<code>$1</code>")
+  .replace(/\n/g, "<br>");
+const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+function ago(ms) {
+  if (!ms) return "never";
+  const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  return `${Math.floor(seconds / 3600)}h ago`;
+}
+
+// A humanized break is a normal, healthy pause - it gets its own orange tone so
+// it never looks like a stall at a glance.
+function isBreak(log) {
+  // breakUntil is authoritative: the bot closes Clash during a break, so the
+  // log goes quiet and the status alone would drift to stalled.
+  if (log.breakUntil && Date.now() < log.breakUntil) return true;
+  return log.status === "paused" && String(log.pausedReason || "").includes("humanized");
+}
+
+function breakLeft(log) {
+  if (!log.breakUntil || Date.now() >= log.breakUntil) return "";
+  const seconds = Math.round((log.breakUntil - Date.now()) / 1000);
+  if (seconds < 60) return `${seconds}s left`;
+  const minutes = Math.floor(seconds / 60);
+  return minutes < 60 ? `${minutes}m left` : `${Math.floor(minutes / 60)}h ${minutes % 60}m left`;
+}
+
+function statusTone(log) {
+  if (isBreak(log)) return "brk";
+  if (log.status === "stalled") return "stalled";
+  if (log.status === "active") return "active";
+  return "paused";
+}
+
+function statusLabel(log) {
+  if (!isBreak(log)) return log.status;
+  const left = breakLeft(log);
+  return left ? `break · ${left}` : "break";
+}
+
+function renderEmbed(embed) {
+  const fields = (embed.fields || []).map((f) => `<div class="stat"><b>${md(f.name)}</b>${md(f.value)}</div>`).join("");
+  return `<div class="sub">${md(embed.description || "")}</div>
+    <div class="stats">${fields}</div>
+    <div class="sub tiny" style="margin-top:11px">${md(embed.footer?.text || "")}</div>`;
+}
+
+// ---------- login ----------
+
+function showLogin() {
+  $("#setup").classList.remove("show");
+  $("#login").classList.add("show");
+  $("#app").classList.remove("show");
+  if (socket) { socket.close(); socket = null; }
+  stopLive();
+  clearInterval(statsTimer);
+}
+
+async function showApp() {
+  $("#setup").classList.remove("show");
+  $("#login").classList.remove("show");
+  $("#app").classList.add("show");
+  connect();
+  await refresh();
+  selectTab(activeTab);
+  loadSettings();
+}
+
+$("#loginForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("#loginError").textContent = "";
+  try {
+    await post("/api/login", { password: $("#password").value });
+    $("#password").value = "";
+    showApp();
+  } catch (error) {
+    $("#loginError").textContent = error.message;
+  }
+});
+
+$("#logout").addEventListener("click", async () => {
+  await post("/api/logout").catch(() => {});
+  showLogin();
+});
+
+// ---------- live socket ----------
+
+function connect() {
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  socket = new WebSocket(`${scheme}://${location.host}/ws`);
+  socket.onopen = () => $("#liveDot").classList.add("on");
+  socket.onclose = () => {
+    $("#liveDot").classList.remove("on");
+    socket = null;
+    setTimeout(() => { if (!socket && $("#app").classList.contains("show")) connect(); }, 3000);
+  };
+  socket.onmessage = (message) => {
+    const data = JSON.parse(message.data);
+    if (data.type === "backlog") { data.events.forEach((e) => appendEvent(e, true)); flushLogs(); return; }
+    if (data.type === "state") { state = data.state; render(); return; }
+    appendEvent(data);
+    flushLogs();
+  };
+}
+
+// Every log keeps its own buffer, so both tabs stay current even while hidden.
+function bufferFor(name) {
+  if (!logBuffers.has(name)) logBuffers.set(name, "");
+  return logBuffers.get(name);
+}
+
+function pushLine(name, html) {
+  let text = bufferFor(name) + (bufferFor(name) ? "\n" : "") + html;
+  if (text.length > MAX_LOG_CHARS) text = text.slice(-MAX_LOG_CHARS);
+  logBuffers.set(name, text);
+}
+
+function appendEvent(event) {
+  const time = `<span class="t">${clock(event.at)}</span>`;
+  if (event.type === "lines") {
+    event.lines.forEach((line) => pushLine(event.log, `${time} ${esc(line)}`));
+    return;
+  }
+  const targets = event.log ? [event.log] : state.logs.map((l) => l.name);
+  let text = "";
+  if (event.type === "event") text = event.output;
+  else if (event.type === "action") text = `${event.instance} -> ${event.action}: ${String(event.output).split("\n")[0]}`;
+  else if (event.type === "action-error") text = `${event.instance} -> ${event.action} FAILED: ${String(event.output).split("\n")[0]}`;
+  else if (event.type === "update-check") text = `${event.instance} update check: available=${event.result?.updateAvailable}`;
+  else if (event.type === "incident") {
+    allIncidents.unshift(event.incident);
+    if (activeTab === "incidents") renderIncidents();
+    else if (event.incident.severity !== "info") { unseenIncidents += 1; renderTabs(); }
+    return;
+  }
+  else if (event.type === "discord") text = event.output;
+  else if (event.type === "config") text = event.output;
+  if (!text) return;
+  targets.forEach((name) => pushLine(name, `${time} <span class="ev">${esc(text)}</span>`));
+}
+
+function flushLogs() {
+  for (const log of state.logs) {
+    const pre = $(`#log-${logSlug(log.name)}`);
+    if (!pre) continue;
+    const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 80;
+    pre.innerHTML = bufferFor(log.name);
+    if (atBottom || pre._follow !== false) {
+      pre.scrollTop = pre.scrollHeight;
+      pre._follow = true;
+      pre.parentElement.querySelector(".jump")?.classList.remove("show");
+    }
+  }
+}
+
+const logSlug = (name) => name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+
+// ---------- tabs ----------
+
+function renderTabs() {
+  const logTabs = state.logs.map((log) => {
+    const tone = statusTone(log);
+    return `<button data-tab="log-${logSlug(log.name)}">${esc(log.name)}<span class="badge ${tone === "active" ? "" : tone}"></span></button>`;
+  }).join("");
+  $("#tabs").innerHTML = `
+    <button data-tab="control">Control</button>
+    <button data-tab="live">Live view</button>
+    ${logTabs}
+    <button data-tab="stats">Stats</button>
+    <button data-tab="config">Config</button>
+    <button data-tab="incidents">Incidents${unseenIncidents ? `<span class="badge warn"></span>` : ""}</button>
+    <button data-tab="discord">Discord<span class="badge ${state.discord?.running ? "" : "off"}"></span></button>
+    <button data-tab="guide">Guide</button>
+    <button data-tab="settings">Settings</button>`;
+  $$("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === activeTab));
+
+  // One section per log, created once and then kept updated.
+  for (const log of state.logs) {
+    const id = `tab-log-${logSlug(log.name)}`;
+    if ($(`#${id}`)) continue;
+    const section = document.createElement("section");
+    section.id = id;
+    section.hidden = true;
+    section.innerHTML = `
+      <div class="card">
+        <h2><span data-logname="${esc(log.name)}">${esc(log.name)}</span>
+          <span class="spacer"></span>
+          <span class="pill" data-logpill="${esc(log.name)}">${esc(statusLabel(log))}</span>
+        </h2>
+        <div class="sub tiny" data-logpath="${esc(log.name)}"></div>
+        <div data-loghealth="${esc(log.name)}"></div>
+        <div class="logwrap" style="margin-top:12px">
+          <pre class="log" id="log-${logSlug(log.name)}"></pre>
+          <button class="jump">Jump to latest</button>
+        </div>
+      </div>`;
+    $("main").appendChild(section);
+
+    const pre = $(`#log-${logSlug(log.name)}`, section);
+    pre._follow = true;
+    pre.addEventListener("scroll", () => {
+      const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 80;
+      pre._follow = atBottom;
+      section.querySelector(".jump").classList.toggle("show", !atBottom);
+    });
+    section.querySelector(".jump").addEventListener("click", () => {
+      pre._follow = true;
+      pre.scrollTop = pre.scrollHeight;
+      section.querySelector(".jump").classList.remove("show");
+    });
+  }
+}
+
+function selectTab(name) {
+  activeTab = name;
+  $$("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  $$("main > section").forEach((s) => { s.hidden = s.id !== `tab-${name}`; });
+
+  if (name === "live") startLive(); else stopLive();
+  if (name === "stats") { loadStats(); loadCharts(); loadSummary(); statsTimer = setInterval(loadStats, 15000); }
+  else clearInterval(statsTimer);
+  if (name === "discord") loadDiscord();
+  if (name === "settings") loadPush();
+  if (name === "config") loadConfig();
+  if (name === "guide") renderGuide();
+  if (name === "incidents") { unseenIncidents = 0; loadIncidents(); renderTabs(); }
+  if (name.startsWith("log-")) {
+    const slug = name.slice(4);
+    const log = state.logs.find((item) => logSlug(item.name) === slug);
+    const pre = $(`#log-${slug}`);
+    if (pre && log) {
+      pre.innerHTML = bufferFor(log.name);
+      pre._follow = true;
+      pre.scrollTop = pre.scrollHeight;
+    }
+  }
+}
+
+$("#tabs").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (button) selectTab(button.dataset.tab);
+});
+
+// ---------- state render ----------
+
+async function refresh() {
+  try {
+    state = await api("/api/state");
+    render();
+  } catch (error) {
+    if (error.message !== "Signed out.") toast(error.message, true);
+  }
+}
+
+function render() {
+  renderTabs();
+
+  $("#statusStrip").innerHTML = `<h2>Status</h2><div class="btn-row" style="margin-top:10px">` +
+    state.logs.map((log) => `<span class="pill ${statusTone(log)}" style="height:30px">
+        <span class="dot ${statusTone(log) === "active" ? "on" : statusTone(log)}"></span>
+        ${esc(log.name)} · ${esc(statusLabel(log))}
+      </span>`).join("") + `</div>`;
+
+  $("#instances").innerHTML = state.instances.map((i) => `
+    <div class="card">
+      <h2>${esc(i.label)}</h2>
+      <div class="sub tiny">${esc(i.device || "no ADB device")} &middot; ${esc(i.version)} &middot; AutoStart ${i.active ? "on" : "off"}</div>
+      <div class="sub tiny">${i.run && i.run.running ? `${i.run.version ? "v" + esc(i.run.version) : "running"}${i.run.account ? " &middot; " + esc(i.run.account) : ""}` : (i.run && i.run.known ? "<span style='color:var(--dim)'>exe not running</span>" : "&nbsp;")}</div>
+      <div class="btn-group" style="margin-top:13px">
+        <button class="btn good" data-act="start" data-id="${esc(i.id)}">Start</button>
+        <button class="btn" data-act="pause" data-id="${esc(i.id)}">Pause</button>
+        <button class="btn bad" data-act="stop" data-id="${esc(i.id)}">Stop</button>
+      </div>
+      <div class="btn-group two" style="margin-top:8px">
+        <button class="btn sm good" data-act="launch" data-id="${esc(i.id)}">Launch &amp; start</button>
+        <button class="btn sm" data-act="closeexe" data-id="${esc(i.id)}">Close exe</button>
+        <button class="btn sm" data-act="openldplayer" data-id="${esc(i.id)}">Open emulator</button>
+        <button class="btn sm" data-act="closeldplayer" data-id="${esc(i.id)}">Close emulator</button>
+      </div>
+      <div class="divider"></div>
+      <button class="btn sm block" data-check="${esc(i.id)}">Check for update</button>
+    </div>`).join("");
+
+  for (const log of state.logs) {
+    const pill = $(`[data-logpill="${CSS.escape(log.name)}"]`);
+    if (pill) { pill.textContent = statusLabel(log); pill.className = `pill ${statusTone(log)}`; }
+    const path = $(`[data-logpath="${CSS.escape(log.name)}"]`);
+    if (path) path.textContent = `${log.activePath || log.path} — last activity ${ago(log.lastActivity)}`;
+    const health = $(`[data-loghealth="${CSS.escape(log.name)}"]`);
+    if (health) health.innerHTML = healthHtml(log);
+    // Seed the buffer from the server's recent lines the first time we see a log.
+    if (!logBuffers.has(log.name) && log.recentLines.length) {
+      logBuffers.set(log.name, log.recentLines.map((line) => `<span class="t">--:--:--</span> ${esc(line)}`).join("\n"));
+    }
+  }
+  flushLogs();
+
+  const pending = Object.values(state.updates || {}).filter((u) => u.available);
+  const banner = $("#updateBanner");
+  banner.classList.toggle("show", pending.length > 0);
+  if (pending.length) {
+    banner.innerHTML = `<strong>AutoClash update available</strong>
+      <div class="sub" style="margin-top:4px">${pending.map((u) => esc(u.label)).join(", ")} —
+      ${state.autoUpdateEnabled ? "auto-update is on, the bot is handling it." : "auto-update is off. Use Check for update on that window."}</div>`;
+  }
+
+  if (!$("#screens").children.length) renderScreenCards();
+}
+
+// ---------- live view ----------
+
+function renderScreenCards() {
+  $("#screens").innerHTML = state.instances.map((i) => `
+    <div class="screen-card" data-screen="${esc(i.id)}">
+      <div class="screen-head">
+        <span class="dot idle"></span><b>${esc(i.label)}</b>
+        <span class="spacer"></span>
+        <span class="sub tiny" data-fps></span>
+      </div>
+      <div class="screen-body${tapMode ? " tappable" : ""}"><div class="msg">Waiting for first frame...</div></div>
+      <div class="screen-foot">
+        <button class="btn sm" data-shot="${esc(i.id)}">Full resolution</button>
+      </div>
+    </div>`).join("");
+}
+
+async function grabFrame(instanceId) {
+  const card = $(`[data-screen="${CSS.escape(instanceId)}"]`);
+  if (!card) return;
+  try {
+    const res = await api(`/api/live/${encodeURIComponent(instanceId)}?t=${Date.now()}`);
+    const blob = await res.blob();
+    const body = card.querySelector(".screen-body");
+    const url = URL.createObjectURL(blob);
+    let img = body.querySelector("img");
+    if (!img) { body.innerHTML = ""; img = document.createElement("img"); body.appendChild(img); }
+    const previous = img.src;
+    img.src = url;
+    if (previous.startsWith("blob:")) URL.revokeObjectURL(previous);
+    card.querySelector(".dot").classList.replace("idle", "on");
+    card.querySelector("[data-fps]").textContent = `${clock(Date.now())} · ${Math.round(blob.size / 1024)} KB`;
+  } catch (error) {
+    card.querySelector(".dot").classList.replace("on", "idle");
+    const body = card.querySelector(".screen-body");
+    if (!body.querySelector("img")) body.innerHTML = `<div class="msg">${esc(error.message)}</div>`;
+  }
+}
+
+// Each instance polls on its own loop so a slow capture cannot stall the other.
+function startLive() {
+  stopLive();
+  if (!liveRate) return;
+  for (const instance of state.instances) {
+    const loop = async () => {
+      if (activeTab !== "live" || document.hidden) return;
+      await grabFrame(instance.id);
+      if (liveTimers.has(instance.id)) liveTimers.set(instance.id, setTimeout(loop, liveRate));
+    };
+    liveTimers.set(instance.id, setTimeout(loop, 0));
+  }
+}
+
+function stopLive() {
+  for (const timer of liveTimers.values()) clearTimeout(timer);
+  liveTimers.clear();
+}
+
+$("#liveRate").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  $$("#liveRate button").forEach((b) => b.classList.toggle("on", b === button));
+  liveRate = Number(button.dataset.rate);
+  if (activeTab === "live") startLive();
+});
+
+$("#tapToggle").addEventListener("click", (event) => {
+  tapMode = !tapMode;
+  event.target.textContent = `Tap mode: ${tapMode ? "on" : "off"}`;
+  event.target.classList.toggle("bad", tapMode);
+  $$(".screen-body").forEach((body) => body.classList.toggle("tappable", tapMode));
+});
+
+// Click position -> emulator tap. The image uses object-fit: contain, so the
+// letterboxed bars have to be subtracted before working out the ratio.
+$("#screens").addEventListener("click", async (event) => {
+  if (!tapMode) return;
+  const img = event.target.closest(".screen-body img");
+  if (!img) return;
+
+  const instanceId = img.closest("[data-screen]").dataset.screen;
+  const box = img.getBoundingClientRect();
+  const natural = img.naturalWidth / img.naturalHeight;
+  const shown = box.width / box.height;
+
+  let drawnW = box.width;
+  let drawnH = box.height;
+  if (natural > shown) drawnH = box.width / natural;
+  else drawnW = box.height * natural;
+
+  const offsetX = (box.width - drawnW) / 2;
+  const offsetY = (box.height - drawnH) / 2;
+  const x = (event.clientX - box.left - offsetX) / drawnW;
+  const y = (event.clientY - box.top - offsetY) / drawnH;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+
+  try {
+    const result = await post("/api/tap", { instanceId, x, y });
+    toast(result.output);
+    setTimeout(() => grabFrame(instanceId), 700);
+  } catch (error) {
+    toast(error.message, true);
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopLive();
+  else if (activeTab === "live") startLive();
+});
+
+// ---------- stats ----------
+
+async function loadStats() {
+  try {
+    const { instances } = await api("/api/stats/all");
+    $("#statsOut").innerHTML = instances.map((entry) => {
+      const raw = statsRange === "daily" ? entry.dailyRaw : entry.sessionRaw;
+      const error = entry[`${statsRange}Error`];
+      const embed = entry[statsRange];
+      return `<div class="card">
+        <h2>${esc(entry.label)}<span class="spacer"></span><span class="pill">${statsRange}</span></h2>
+        ${raw ? statsBody(raw, statsRange) : `<div class="sub" style="margin-top:10px">${esc(error || "No stats found.")}</div>`}
+        ${raw && statsRange === "daily" && Number(raw.sessions) === 1
+          ? '<div class="sub tiny" style="margin-top:10px">Only one session so far today, so these match the session view.</div>'
+          : ""}
+        ${raw ? `<div class="sub tiny" style="margin-top:12px">Source: ${esc(raw.source || "stats.db")}${embed ? "" : ""}</div>` : ""}
+      </div>`;
+    }).join("");
+  } catch (error) {
+    if (error.message !== "Signed out.") $("#statsOut").innerHTML = `<div class="card sub">${esc(error.message)}</div>`;
+  }
+}
+
+// Main base and builder base are separate games with separate numbers, so they
+// get separate sections rather than one flat grid.
+function statsBody(raw, range) {
+  const s = raw.stats || {};
+  const runtime = Number(s.runtime_seconds || 0);
+  const hours = runtime / 3600;
+  const rate = (value) => (hours >= 0.1 && Number(value) ? `<span class="rate">${compact(Number(value) / hours)}/h</span>` : "");
+  const num = (value) => fmt(Number(value || 0));
+
+  // total_attacks counts main-base attacks only: stars_0..3 sums to it, while
+  // bb_attacks is tracked separately.
+  const mainAttacks = Number(s.total_attacks || 0);
+  const attackRate = hours >= 0.1 && mainAttacks ? ` · ${(mainAttacks / hours).toFixed(1)}/h` : "";
+  const sessions = Number(raw.sessions || 0);
+  const dayHeader = sessions
+    ? `${esc(raw.date)} · ${sessions} session${sessions === 1 ? "" : "s"}`
+    : esc(raw.date);
+  const header = range === "daily" && raw.date ? dayHeader : formatRuntime(runtime);
+
+  const main = `
+    <div class="base-head">🏰 Main Base</div>
+    <div class="sub tiny">${header} · <strong>${num(mainAttacks)}</strong> attacks${attackRate}</div>
+    <div class="stats">
+      <div class="stat"><b>Gold</b>${compact(s.gold_gained)}${rate(s.gold_gained)}</div>
+      <div class="stat"><b>Elixir</b>${compact(s.elixir_gained)}${rate(s.elixir_gained)}</div>
+      <div class="stat"><b>Dark</b>${compact(s.dark_gained)}${rate(s.dark_gained)}</div>
+      <div class="stat"><b>Donations</b>${num(s.donations_completed)}</div>
+      <div class="stat"><b>Walls</b>${num(s.walls_upgraded)}</div>
+      <div class="stat"><b>Obstacles</b>${num(s.obstacles_removed)}</div>
+      <div class="stat"><b>Upgrades</b>${num(s.upgrades_done)}</div>
+      <div class="stat"><b>Research</b>${num(s.research_done)}</div>
+    </div>
+    <div class="base-sub">Attack results</div>
+    ${starsHtml(s)}`;
+
+  const builder = `
+    <div class="base-head builder">🔨 Builder Base</div>
+    <div class="stats">
+      <div class="stat"><b>Attacks</b>${num(s.bb_attacks)}</div>
+      <div class="stat"><b>Walls</b>${num(s.bb_walls_upgraded)}</div>
+    </div>`;
+
+  return main + builder;
+}
+
+// Star spread as bars, same idea as the Discord embed.
+function starsHtml(s) {
+  const counts = [s.stars_0, s.stars_1, s.stars_2, s.stars_3].map((v) => Number(v || 0));
+  const total = counts.reduce((sum, v) => sum + v, 0);
+  if (!total) return `<div class="sub tiny">No attacks recorded.</div>`;
+  return counts.map((value, index) => {
+    const percent = Math.round((value / total) * 100);
+    return `<div class="starrow">
+      <span class="starlabel">${index}★</span>
+      <span class="starbar"><i style="width:${percent}%"></i></span>
+      <span class="starval">${fmt(value)} <span class="sub tiny">(${percent}%)</span></span>
+    </div>`;
+  }).join("");
+}
+
+const fmt = (n) => Number(n || 0).toLocaleString();
+
+function formatRuntime(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+$("#statsRange").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  $$("#statsRange button").forEach((b) => b.classList.toggle("on", b === button));
+  statsRange = button.dataset.range;
+  loadStats();
+});
+
+// ---------- log health ----------
+
+const KIND_LABEL = {
+  "device-error": "device error", "capture-error": "capture error", stuck: "stuck",
+  restart: "restart", watchdog: "watchdog", failure: "failure", recovery: "recovery",
+};
+
+// Faults the log parser found in the last hour, with the most recent lines.
+function healthHtml(log) {
+  const health = log.health;
+  if (!health) return "";
+  const { errors, warnings, recoveries } = health.lastHour;
+
+  const chip = (tone, count, label) =>
+    count ? `<span class="pill ${tone}">${count} ${label}${count === 1 ? "" : "s"}</span>` : "";
+  const chips = [
+    chip("stalled", errors, "error"),
+    chip("brk", warnings, "warning"),
+    chip("active", recoveries, "recovery"),
+  ].filter(Boolean).join(" ");
+
+  const rows = (health.recent || []).slice(0, 6).map((entry) =>
+    `<div class="sub tiny" style="margin-top:4px">
+       <span class="${entry.severity === "error" ? "sev-err" : "sev-warn"}">${esc(KIND_LABEL[entry.kind] || entry.kind)}</span>
+       · ${clock(entry.at)} · ${esc(entry.line).slice(0, 110)}
+     </div>`).join("");
+
+  return `<div class="btn-row" style="margin-top:10px">${chips || '<span class="pill active">clean last hour</span>'}</div>${rows}`;
+}
+
+// ---------- charts ----------
+
+// Minimal inline SVG. No chart library, no build step.
+function lineChart(series, options = {}) {
+  const width = 640;
+  const height = options.height || 170;
+  const pad = { top: 12, right: 10, bottom: 26, left: 46 };
+  const points = series.filter((line) => line.values.some((value) => value !== null && value !== undefined));
+  if (!points.length) return `<div class="sub tiny" style="margin-top:12px">Not enough history yet.</div>`;
+
+  const count = Math.max(...points.map((line) => line.values.length));
+  if (count < 2) return `<div class="sub tiny" style="margin-top:12px">Need at least two data points.</div>`;
+
+  const all = points.flatMap((line) => line.values).filter((value) => typeof value === "number");
+  const max = Math.max(...all, 1);
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const xAt = (index) => pad.left + (index / (count - 1)) * plotW;
+  const yAt = (value) => pad.top + plotH - (value / max) * plotH;
+
+  const gridlines = [0, 0.5, 1].map((fraction) => {
+    const y = pad.top + plotH - fraction * plotH;
+    return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="var(--line-soft)" stroke-width="1"/>
+      <text x="${pad.left - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--dim)">${compact(max * fraction)}</text>`;
+  }).join("");
+
+  const paths = points.map((line) => {
+    const d = line.values.map((value, index) =>
+      value === null || value === undefined ? null : `${index === 0 ? "M" : "L"}${xAt(index).toFixed(1)},${yAt(value).toFixed(1)}`
+    ).filter(Boolean).join(" ").replace(/L/, "M");
+    return `<path d="${d}" fill="none" stroke="${line.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }).join("");
+
+  const labels = (options.labels || []).map((label, index) => {
+    if (count > 8 && index % Math.ceil(count / 7) !== 0) return "";
+    return `<text x="${xAt(index)}" y="${height - 8}" text-anchor="middle" font-size="10" fill="var(--dim)">${esc(label)}</text>`;
+  }).join("");
+
+  const legend = `<div class="chart-legend">${points.map((line) => `<span><i style="background:${line.color}"></i>${esc(line.name)}</span>`).join("")}</div>`;
+  return `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img">${gridlines}${paths}${labels}</svg>${legend}`;
+}
+
+function compact(value) {
+  const n = Number(value) || 0;
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return String(Math.round(n));
+}
+
+async function loadCharts() {
+  const blocks = [];
+  for (const instance of state.instances) {
+    try {
+      const history = await api(`/api/history/${encodeURIComponent(instance.id)}?days=14&sessions=24`);
+      const days = history.days || [];
+      const sessions = history.sessions || [];
+
+      const daily = lineChart([
+        { name: "Gold", color: "#f0c650", values: days.map((d) => d.gold_gained) },
+        { name: "Elixir", color: "#c77dff", values: days.map((d) => d.elixir_gained) },
+        { name: "Dark", color: "#8b9ab0", values: days.map((d) => d.dark_gained) },
+      ], { labels: days.map((d) => String(d.date).slice(5)) });
+
+      const sessionLabels = sessions.map((x) => {
+        // stats.db timestamps are seconds in some rows, milliseconds in others.
+        const ms = Number(x.at) > 1e11 ? Number(x.at) : Number(x.at) * 1000;
+        return Number.isFinite(ms) && ms > 0 ? new Date(ms).toLocaleDateString([], { month: "numeric", day: "numeric" }) : "";
+      });
+
+      // Loot rates and attack rates live on wildly different scales, so they
+      // get their own axes rather than one squashing the other flat.
+      const lootRate = lineChart([
+        { name: "Gold/h", color: "#f0c650", values: sessions.map((x) => x.goldPerHour) },
+        { name: "Elixir/h", color: "#c77dff", values: sessions.map((x) => x.elixirPerHour) },
+        { name: "Dark/h", color: "#8b9ab0", values: sessions.map((x) => x.darkPerHour) },
+      ], { labels: sessionLabels, height: 150 });
+
+      const attackRate = lineChart([
+        { name: "Attacks/h", color: "#4c8dff", values: sessions.map((x) => x.attacksPerHour) },
+      ], { labels: sessionLabels, height: 120 });
+
+      blocks.push(`<div style="margin-top:18px">
+        <div class="sub" style="font-weight:600;color:var(--text)">${esc(instance.label)}</div>
+        <div class="sub tiny" style="margin-top:8px">Daily loot</div>${daily}
+        <div class="sub tiny" style="margin-top:14px">Loot per hour, by session</div>${lootRate}
+        <div class="sub tiny" style="margin-top:14px">Attacks per hour, by session</div>${attackRate}
+      </div>`);
+    } catch (error) {
+      blocks.push(`<div class="sub tiny" style="margin-top:14px">${esc(instance.label)}: ${esc(error.message)}</div>`);
+    }
+  }
+  $("#chartsOut").innerHTML = blocks.join("");
+}
+
+// ---------- daily summary ----------
+
+async function loadSummary() {
+  try {
+    const summary = await api("/api/summary");
+    const rows = summary.windows.map((w) => w.found
+      ? `<div class="stat"><b>${esc(w.label)}</b>${compact(w.gold)} gold · ${w.attacks} attacks<br><span class="sub tiny">${Math.round(w.runtimeSeconds / 3600)}h runtime</span></div>`
+      : `<div class="stat"><b>${esc(w.label)}</b><span class="sub tiny">no sessions</span></div>`).join("");
+    const health = summary.incidents.errors
+      ? `<span class="pill stalled">${summary.incidents.errors} errors</span>`
+      : summary.incidents.warnings
+        ? `<span class="pill brk">${summary.incidents.warnings} recoveries</span>`
+        : `<span class="pill active">no problems</span>`;
+    $("#summaryOut").innerHTML = `
+      <div class="sub">${esc(summary.dayKey)} — total <strong>${compact(summary.totals.gold)}</strong> gold,
+        <strong>${summary.totals.attacks}</strong> attacks, ${Math.round(summary.totals.runtimeSeconds / 3600)}h runtime ${health}</div>
+      <div class="stats">${rows}</div>`;
+  } catch (error) {
+    $("#summaryOut").innerHTML = esc(error.message);
+  }
+}
+
+$("#reloadSummary").addEventListener("click", loadSummary);
+
+// ---------- push ----------
+
+async function loadPush() {
+  try {
+    const status = await api("/api/push");
+    $("#pushPill").textContent = status.enabled ? "on" : "off";
+    $("#pushPill").className = `pill ${status.enabled ? "active" : ""}`;
+    $("#pushInfo").innerHTML = status.enabled
+      ? `Alerts go to <code>${esc(status.server)}</code> at severity <strong>${esc(status.minSeverity)}</strong> and above. Subscribe to the same topic in the ntfy app on your phone.`
+      : `Off. Set <code>NTFY_ENABLED=true</code> and a <code>NTFY_TOPIC</code> below, then restart the monitor. Use a long random topic name — anyone who knows it can read your alerts.`;
+    $("#pushTest").disabled = !status.enabled;
+  } catch (error) {
+    if (error.message !== "Signed out.") $("#pushInfo").textContent = error.message;
+  }
+}
+
+$("#pushTest").addEventListener("click", async (event) => {
+  event.target.disabled = true;
+  try {
+    const result = await post("/api/push/test");
+    toast(result.output);
+  } catch (error) {
+    toast(error.message, true);
+  }
+  loadPush();
+});
+
+// ---------- config editor ----------
+
+let cfgInstanceId = null;
+let cfgAccount = null;      // null = instance-level settings
+let cfgData = null;         // { config, runtimeStateKeys, state, accounts }
+let cfgEdits = {};
+let cfgSection = null;   // null = show the first section with keys          // key -> new value, only what actually changed
+
+function cfgSelectInstance(id) {
+  cfgInstanceId = id;
+  cfgAccount = null;
+  cfgEdits = {};
+  loadConfig();
+}
+
+async function loadConfig() {
+  if (!cfgInstanceId) cfgInstanceId = state.instances[0]?.id || null;
+  if (!cfgInstanceId) return;
+
+  $("#cfgInstance").innerHTML = state.instances
+    .map((i) => '<button data-cfginst="' + esc(i.id) + '" class="' + (i.id === cfgInstanceId ? "on" : "") + '">' + esc(i.label) + '</button>')
+    .join("");
+
+  try {
+    const base = await api("/api/config/instance/" + encodeURIComponent(cfgInstanceId));
+    cfgData = base;
+    if (cfgAccount) {
+      const acct = await api("/api/config/account/" + encodeURIComponent(cfgInstanceId) + "/" + encodeURIComponent(cfgAccount));
+      cfgData = Object.assign({}, base, { config: acct.config });
+    }
+    renderConfig();
+  } catch (error) {
+    if (error.message !== "Signed out.") $("#cfgBody").innerHTML = '<div class="card sub">' + esc(error.message) + '</div>';
+  }
+}
+
+function renderConfig() {
+  const runState = cfgData.state;
+  const accounts = cfgData.accounts || [];
+  const config = cfgData.config;
+  const locked = runState.running;
+  const dirty = Object.keys(cfgEdits).length;
+
+  const lockDetail = locked
+    ? runState.processCount + " process(es)"
+      + (runState.version ? " · v" + esc(runState.version) : "")
+      + (runState.account ? " · " + esc(runState.account) + " active" : "")
+      + " — AutoClash overwrites config while it runs."
+    : "No AutoClash process for this window. Changes can be saved.";
+
+  $("#cfgLock").innerHTML =
+    '<div class="lockbar ' + (locked ? "locked" : "open") + '">'
+    + '<span class="dot ' + (locked ? "on" : "idle") + '"></span>'
+    + '<div style="flex:1;min-width:190px">'
+    + '<div style="font-weight:600;font-size:13.5px">' + (locked ? "Running — settings locked" : "Stopped — safe to edit") + '</div>'
+    + '<div class="sub tiny">' + lockDetail + '</div></div>'
+    + (locked
+      ? '<button class="btn bad sm" data-cfgact="closeexe">Close exe</button>'
+      : '<button class="btn good sm" data-cfgact="launch">Launch &amp; start</button>')
+    + '</div>';
+
+  const tabs = ['<button data-cfgacct="" class="' + (cfgAccount ? "" : "on") + '">Instance</button>']
+    .concat(accounts.map((a) =>
+      '<button data-cfgacct="' + esc(a.name) + '" class="' + (cfgAccount === a.name ? "on" : "") + '">' + esc(a.name) + (a.enabled ? " ●" : "") + '</button>'))
+    .join("");
+
+  if (!config) {
+    $("#cfgBody").innerHTML = '<div class="card"><div class="seg" style="flex-wrap:wrap">' + tabs
+      + '</div><div class="sub" style="margin-top:12px">Config unavailable.</div></div>';
+    return;
+  }
+
+  // Group by AutoClash's own sidebar rather than dumping 106 alphabetical rows.
+  const groups = new Map();
+  for (const key of Object.keys(config).sort()) {
+    const section = sectionForKey(key);
+    const id = section.id + (section.tab ? "::" + section.tab : "");
+    if (!groups.has(id)) groups.set(id, { id, name: section.name, tab: section.tab, keys: [] });
+    groups.get(id).keys.push(key);
+  }
+
+  // Keep AutoClash's ordering; anything unknown sinks to the bottom.
+  const ORDER = ["general", "attack-army", "multi-village", "builder-base", "clan-capital", "upgrades", "xp-farming", "extra-modes", "bot-runtime", "emulator", "runtime-state", "other"];
+  const ordered = [...groups.values()].sort((a, b) => {
+    const ai = ORDER.indexOf(a.id.split("::")[0]);
+    const bi = ORDER.indexOf(b.id.split("::")[0]);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
+
+  if (!ordered.some((g) => g.id === cfgSection)) cfgSection = ordered[0]?.id || null;
+  const current = ordered.find((g) => g.id === cfgSection) || ordered[0];
+
+  const options = ordered
+    .map((g) => '<option value="' + esc(g.id) + '"' + (g.id === cfgSection ? " selected" : "") + '>'
+      + esc(g.name + (g.tab ? " — " + g.tab : "")) + " (" + g.keys.length + ")</option>")
+    .join("");
+
+  const newKeys = new Set(cfgData.newKeys || []);
+
+  $("#cfgBody").innerHTML = '<div class="card">'
+    + '<div class="seg" style="flex-wrap:wrap;margin-bottom:4px">' + tabs + '</div>'
+    + '<div class="sub tiny" style="margin-top:8px">'
+    + (cfgAccount ? "Account: " + esc(cfgAccount) : "Instance-wide settings")
+    + " · " + Object.keys(config).length + ' settings</div>'
+    + '<label class="field" style="margin-top:12px">Section'
+    + '<select id="cfgSectionPick">' + options + '</select></label>'
+    + (current
+      ? '<div style="margin-top:12px">'
+        + (current.id === "runtime-state"
+          ? '<div class="sub tiny" style="color:#f0c650;margin-bottom:8px">AutoClash uses these for its own bookkeeping. Changing them can confuse the bot.</div>'
+          : "")
+        + (current.id === "other"
+          ? '<div class="sub tiny" style="margin-bottom:8px">Settings this panel does not recognise yet — most likely new in your AutoClash version. They are fully editable.</div>'
+          : "")
+        + current.keys.map((k) => cfgFieldHtml(k, config[k], locked, newKeys.has(k))).join("")
+        + '</div>'
+      : '<div class="sub">No settings in this section.</div>')
+    + '<div class="btn-row" style="margin-top:16px">'
+    + '<button class="btn primary" id="cfgSave"' + (locked || !dirty ? " disabled" : "") + '>Save' + (dirty ? " (" + dirty + ")" : "") + '</button>'
+    + '<button class="btn" id="cfgReset"' + (dirty ? "" : " disabled") + '>Discard</button>'
+    + '<button class="btn" id="cfgRevert"' + (locked ? " disabled" : "") + '>Restore backup</button>'
+    + (dirty ? '<span class="sub tiny dirty" style="align-self:center">' + dirty + ' unsaved change(s)</span>' : "")
+    + '</div></div>';
+
+  const picker = $("#cfgSectionPick");
+  if (picker) picker.addEventListener("change", (event) => { cfgSection = event.target.value; renderConfig(); });
+}
+
+function cfgFieldHtml(key, value, locked, isNew) {
+  const edited = key in cfgEdits;
+  const current = edited ? cfgEdits[key] : value;
+  const dis = locked ? " disabled" : "";
+  const choices = choicesForKey(key, (cfgData.enums || {})[key] || []);
+  let control;
+
+  if (typeof value === "boolean") {
+    control = '<div class="sw ' + (current ? "on" : "") + (locked ? " disabled" : "") + '" data-cfgbool="' + esc(key) + '"><i></i></div>';
+  } else if (choices.length > 1 && typeof value !== "object") {
+    // Known-good values plus anything found in this user's own profiles, so a
+    // strategy AutoClash added later appears as soon as any profile uses it.
+    // "Custom value" keeps an unknown identifier reachable rather than trapping
+    // the user in whatever list this panel happens to know about.
+    const seen = choices.some((c) => String(c) === String(current)) ? choices : [current, ...choices];
+    control = '<select data-cfgpick="' + esc(key) + '"' + dis + '>'
+      + seen.map((v) => '<option value="' + esc(v) + '"' + (String(v) === String(current) ? " selected" : "") + '>' + esc(labelForValue(key, v)) + '</option>').join("")
+      + '<option value="__custom__">Custom value…</option>'
+      + '</select>';
+  } else if (typeof value === "number") {
+    control = '<input type="number" step="any" data-cfgkey="' + esc(key) + '" value="' + esc(current) + '"' + dis + '>';
+  } else if (typeof value === "string") {
+    control = '<input type="text" data-cfgkey="' + esc(key) + '" value="' + esc(current) + '"' + dis + '>';
+  } else if (Array.isArray(value)) {
+    // Slot arrays render one labelled row each, sized from the array itself, so
+    // a version with more slots just shows more rows.
+    control = '<textarea data-cfgjson="' + esc(key) + '" spellcheck="false"' + dis + '>' + esc(JSON.stringify(current, null, 1)) + '</textarea>';
+  } else {
+    control = '<textarea data-cfgjson="' + esc(key) + '" spellcheck="false"' + dis + '>' + esc(JSON.stringify(current, null, 1)) + '</textarea>';
+  }
+
+  const badge = isNew ? '<span class="pill brk" style="margin-left:6px;font-size:9px;padding:1px 6px">new</span>' : "";
+  return '<div class="cfg-field"><span class="cfg-key ' + (edited ? "dirty" : "") + '">'
+    + esc(labelForKey(key)) + badge + (edited ? " *" : "")
+    + '<span class="rawkey">' + esc(key) + '</span></span>' + control + '</div>';
+}
+
+// Only record a key if it actually differs from what is on disk.
+function cfgNote(key, value) {
+  if (JSON.stringify(cfgData.config[key]) === JSON.stringify(value)) delete cfgEdits[key];
+  else cfgEdits[key] = value;
+}
+
+$("#tab-config").addEventListener("click", async (event) => {
+  const toggle = event.target.closest("[data-cfgbool]");
+  if (toggle && !toggle.classList.contains("disabled")) {
+    cfgNote(toggle.dataset.cfgbool, !toggle.classList.contains("on"));
+    renderConfig();
+    return;
+  }
+
+  const button = event.target.closest("button");
+  if (!button) return;
+
+  if (button.dataset.cfginst) return cfgSelectInstance(button.dataset.cfginst);
+
+  if (button.hasAttribute("data-cfgacct")) {
+    cfgAccount = button.dataset.cfgacct || null;
+    cfgEdits = {};
+    return loadConfig();
+  }
+
+  if (button.dataset.cfgact) {
+    button.disabled = true;
+    try {
+      await post("/api/action", { action: button.dataset.cfgact, instanceId: cfgInstanceId });
+      toast("Sent. Checking state...");
+      // The window list is cached ~10s server side; give the process time to go.
+      setTimeout(loadConfig, 6000);
+    } catch (error) {
+      toast(error.message, true);
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (button.id === "cfgReset") {
+    cfgEdits = {};
+    return renderConfig();
+  }
+
+  if (button.id === "cfgSave") {
+    const url = cfgAccount
+      ? "/api/config/account/" + encodeURIComponent(cfgInstanceId) + "/" + encodeURIComponent(cfgAccount)
+      : "/api/config/instance/" + encodeURIComponent(cfgInstanceId);
+    button.disabled = true;
+    try {
+      const result = await post(url, { updates: cfgEdits });
+      toast("Saved " + result.changed + " change(s)." + (result.backup ? " Backup: " + result.backup : ""));
+      cfgEdits = {};
+      loadConfig();
+    } catch (error) {
+      toast(error.message, true);
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (button.id === "cfgRevert") {
+    if (!confirm("Restore the most recent backup? Current settings for this file will be replaced.")) return;
+    try {
+      const result = await post("/api/config/revert/" + encodeURIComponent(cfgInstanceId) + "/" + encodeURIComponent(cfgAccount || ""));
+      toast("Restored " + result.restored + ".");
+      cfgEdits = {};
+      loadConfig();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+});
+
+// Text, number and JSON fields commit on change rather than per keystroke, so
+// the form does not re-render while typing.
+$("#tab-config").addEventListener("change", (event) => {
+  const el = event.target;
+  if (el.dataset.cfgkey) {
+    cfgNote(el.dataset.cfgkey, el.type === "number" ? Number(el.value) : el.value);
+    renderConfig();
+  } else if (el.dataset.cfgpick) {
+    const key = el.dataset.cfgpick;
+    if (el.value === "__custom__") {
+      const typed = prompt("Enter the exact value AutoClash uses for " + labelForKey(key) + ":", String(cfgData.config[key] ?? ""));
+      if (typed === null) return renderConfig();
+      cfgNote(key, typeof cfgData.config[key] === "number" ? Number(typed) : typed);
+    } else {
+      cfgNote(key, typeof cfgData.config[key] === "number" ? Number(el.value) : el.value);
+    }
+    renderConfig();
+  } else if (el.dataset.cfgjson) {
+    try {
+      cfgNote(el.dataset.cfgjson, JSON.parse(el.value));
+      renderConfig();
+    } catch {
+      toast(el.dataset.cfgjson + ": not valid JSON", true);
+    }
+  }
+});
+
+// ---------- incidents ----------
+
+const SEVERITY_STYLE = { error: "stalled", warn: "paused", info: "active" };
+
+async function loadIncidents() {
+  try {
+    const { incidents } = await api("/api/incidents?limit=200");
+    allIncidents = incidents;
+    renderIncidents();
+  } catch (error) {
+    if (error.message !== "Signed out.") $("#incidentsOut").innerHTML = `<div class="card sub">${esc(error.message)}</div>`;
+  }
+}
+
+function renderIncidents() {
+  const filtered = allIncidents.filter((entry) => {
+    if (incidentFilter === "problem") return entry.severity === "error" || entry.severity === "warn";
+    if (incidentFilter === "withpic") return Boolean(entry.image);
+    return true;
+  });
+
+  $("#incidentsOut").innerHTML = filtered.length
+    ? filtered.map((entry) => `
+      <div class="card">
+        <h2>
+          <span class="pill ${SEVERITY_STYLE[entry.severity] || ""}">${esc(entry.kind)}</span>
+          <span class="spacer"></span>
+          <span class="sub tiny">${new Date(entry.at).toLocaleString()}</span>
+        </h2>
+        <div class="sub tiny">${esc(entry.instance || entry.log || "")} &middot; ${ago(entry.at)}</div>
+        <div class="sub" style="margin-top:9px;white-space:pre-wrap;overflow-wrap:anywhere">${esc(entry.message)}</div>
+        ${entry.image
+          ? `<img class="incident-img" loading="lazy" src="/api/incident-image/${encodeURIComponent(entry.image)}" alt="screenshot at incident">`
+          : entry.captureError
+            ? `<div class="sub tiny" style="margin-top:9px">No photo: ${esc(entry.captureError)}</div>`
+            : ""}
+      </div>`).join("")
+    : `<div class="card sub">Nothing recorded yet. Crashes, recoveries and updates will show up here.</div>`;
+}
+
+$("#incidentFilter").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  $$("#incidentFilter button").forEach((b) => b.classList.toggle("on", b === button));
+  incidentFilter = button.dataset.sev;
+  renderIncidents();
+});
+
+// ---------- discord ----------
+
+async function loadDiscord() {
+  try {
+    const status = await api("/api/discord");
+    state.discord = status;
+    const pill = $("#discordPill");
+    pill.textContent = !status.configured ? "not configured" : status.running ? (status.connected ? "running" : "starting") : "stopped";
+    pill.className = `pill ${!status.configured ? "" : status.running ? "active" : "paused"}`;
+    $("#discordInfo").innerHTML = !status.configured
+      ? "No DISCORD_TOKEN / DISCORD_CHANNEL_ID set. Add them in Settings, then restart the monitor."
+      : `Gateway ${status.connected ? "connected" : "not connected"}. Control panel ${status.controlPanelEnabled ? "enabled" : "disabled"}.
+         ${status.running ? `Started ${ago(status.startedAt)}.` : ""}
+         ${status.lastError ? `<br><span style="color:#ff8a85">Last error: ${esc(status.lastError)}</span>` : ""}`;
+    $("#discordStart").disabled = !status.configured || status.running;
+    $("#discordStop").disabled = !status.configured || !status.running;
+    $("#discordChannels").innerHTML = (status.logChannels || [])
+      .map((c) => `<div>${esc(c.name)} &rarr; <code>${esc(c.channelId)}</code></div>`).join("") || "None.";
+    renderTabs();
+  } catch (error) {
+    if (error.message !== "Signed out.") toast(error.message, true);
+  }
+}
+
+for (const [id, action] of [["#discordStart", "start"], ["#discordStop", "stop"]]) {
+  $(id).addEventListener("click", async (event) => {
+    event.target.disabled = true;
+    try {
+      const result = await post("/api/discord", { action });
+      toast(result.output);
+    } catch (error) {
+      toast(error.message, true);
+    }
+    loadDiscord();
+  });
+}
+
+// ---------- actions ----------
+
+async function runAction(button, payload) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Working...";
+  try {
+    const result = await post("/api/action", payload);
+    toast(result.output ? String(result.output).split("\n")[0] : "Done");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+
+  if (button.dataset.act) return runAction(button, { action: button.dataset.act, instanceId: button.dataset.id });
+  if (button.dataset.global) return runAction(button, { action: button.dataset.global });
+
+  if (button.dataset.check) {
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = "Checking...";
+    try {
+      const result = await post("/api/update/check", { instanceId: button.dataset.check });
+      toast(result.updateAvailable ? "Update available." : "No update found.");
+      refresh();
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+    return;
+  }
+
+  if (button.dataset.shot) {
+    button.disabled = true;
+    try {
+      const res = await api(`/api/screen/${encodeURIComponent(button.dataset.shot)}?t=${Date.now()}`);
+      const url = URL.createObjectURL(await res.blob());
+      window.open(url, "_blank");
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+});
+
+$("#fullDesktop").addEventListener("click", async (event) => {
+  event.target.disabled = true;
+  $("#desktopOut").innerHTML = `<div class="sub" style="margin-top:12px">Capturing desktop...</div>`;
+  try {
+    const res = await api(`/api/fullscreen?t=${Date.now()}`);
+    const url = URL.createObjectURL(await res.blob());
+    $("#desktopOut").innerHTML = `<img src="${url}" alt="desktop" style="width:100%;border-radius:9px;border:1px solid var(--line-soft);margin-top:12px;display:block">`;
+  } catch (error) {
+    $("#desktopOut").innerHTML = `<div class="sub" style="margin-top:12px">${esc(error.message)}</div>`;
+  } finally {
+    event.target.disabled = false;
+  }
+});
+
+$("#restartBot").addEventListener("click", async () => {
+  if (!confirm("Restart the monitor process? AutoClash keeps running; only this monitor restarts.")) return;
+  await post("/api/restart").catch(() => {});
+  toast("Restarting. Reconnecting shortly...");
+});
+
+// ---------- settings ----------
+
+async function loadSettings() {
+  try {
+    const { env } = await api("/api/config");
+    const groups = {
+      Discord: (k) => k.startsWith("DISCORD") || k.startsWith("AUTOCONTROL_CHANNEL") || k.endsWith("CHANNEL_ID") || k.endsWith("CHANNEL_NAME") || k.startsWith("LIVE_LOG"),
+      "Web panel": (k) => k.startsWith("WEB_") || k.startsWith("LIVE_VIEW"),
+      AutoClash: (k) => k.startsWith("AUTOCONTROL") || k.startsWith("APP_") || k.startsWith("AUTO_RESTART"),
+      Emulator: (k) => k === "EMULATOR" || k.startsWith("MUMU") || k.startsWith("LDPLAYER") || k.startsWith("ADB_"),
+    };
+    const keys = Object.keys(env).sort();
+    const used = new Set();
+    let html = "";
+    for (const [title, match] of Object.entries(groups)) {
+      const group = keys.filter((k) => !used.has(k) && match(k));
+      group.forEach((k) => used.add(k));
+      if (group.length) html += `<div class="setting-group"><h3>${title}</h3></div>` + group.map((k) => fieldHtml(k, env[k])).join("");
+    }
+    const rest = keys.filter((k) => !used.has(k));
+    if (rest.length) html += `<div class="setting-group"><h3>Other</h3></div>` + rest.map((k) => fieldHtml(k, env[k])).join("");
+    $("#settingsForm").innerHTML = html;
+  } catch (error) {
+    if (error.message !== "Signed out.") toast(error.message, true);
+  }
+}
+
+function fieldHtml(key, value) {
+  const secret = SECRET_KEYS.includes(key);
+  return `<label class="field">${key}
+    <input type="${secret ? "password" : "text"}" name="${key}" value="${secret ? "" : String(value).replace(/"/g, "&quot;")}"
+      placeholder="${secret ? "unchanged" : ""}" autocomplete="off" spellcheck="false"></label>`;
+}
+
+$("#reloadSettings").addEventListener("click", (event) => { event.preventDefault(); loadSettings(); });
+
+$("#saveSettings").addEventListener("click", async (event) => {
+  event.preventDefault();
+  const env = {};
+  for (const input of $$("#settingsForm input")) {
+    if (SECRET_KEYS.includes(input.name) && !input.value) continue;
+    env[input.name] = input.value;
+  }
+  try {
+    await post("/api/config", { env });
+    toast("Saved. Restart the monitor to apply.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+});
+
+// ---------- boot ----------
+
+// Registering the worker is what makes Android offer "Install app". It caches
+// nothing, so this cannot serve a stale panel.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+function showSetup() {
+  $("#setup").classList.add("show");
+  $("#login").classList.remove("show");
+  $("#app").classList.remove("show");
+  setupBoot();
+}
+
+api("/api/session")
+  .then((result) => {
+    if (result.setupNeeded) return showSetup();
+    return result.authenticated ? showApp() : showLogin();
+  })
+  .catch(() => showLogin());
+
+setInterval(() => { if ($("#app").classList.contains("show")) refresh(); }, 15000);
+</script>
+<script src="/setup.js"></script>
+<script src="/guide.js"></script>
+</body>
+</html>

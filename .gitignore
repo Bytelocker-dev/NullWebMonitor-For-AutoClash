@@ -1,0 +1,27 @@
+# Secrets and per-install configuration
+.env
+.env.local
+scripts/secret-denylist.txt
+
+# Runtime state — machine specific, often contains IDs and tokens
+bot-state.json
+web-sessions.json
+config-schema.json
+
+# Captured images and incident records (can show your village and account names)
+control-screenshots/
+incidents/
+
+# Config backups written next to AutoClash's own files
+*.bak.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.omc/
