@@ -59,9 +59,13 @@ start "" /b cmd /c "timeout /t 3 /nobreak >nul & start http://localhost:%WEBPORT
 REM npm install and the nested cmd above both rewrite the console title, so
 REM claim it back on every pass instead of only once at the top.
 title NullWebMonitor  -  http://localhost:%WEBPORT%
-node bot.js
+
+REM watchdog.js supervises the monitor and restarts it on a crash, clearing the
+REM old process tree and waiting for the port first. This loop is the layer
+REM above that: it only matters if the watchdog itself dies.
+node watchdog.js
 echo.
-echo   Monitor stopped. Restarting in 5 seconds...
+echo   Watchdog stopped. Restarting in 5 seconds...
 echo   Press Ctrl+C or close this window to quit.
 title NullWebMonitor  -  stopped, restarting
 timeout /t 5 /nobreak >nul

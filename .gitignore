@@ -4,6 +4,8 @@
 scripts/secret-denylist.txt
 
 # Runtime state — machine specific, often contains IDs and tokens
+monitor.pid
+crash-log.txt
 bot-state.json
 web-sessions.json
 config-schema.json
