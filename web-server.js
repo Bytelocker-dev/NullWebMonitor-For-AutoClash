@@ -265,6 +265,8 @@ function startWebServer(deps) {
         status: log.status,
         pausedReason: log.pausedReason || "",
         breakUntil: log.breakUntil || 0,
+        visualBackoffUntil: log.visualBackoffUntil || 0,
+        lastVisualFailure: log.lastVisualFailure || "",
         health: deps.logHealth(log),
         lastActivity: log.lastActivity,
         recentLines: log.recentLines.slice(-25),
