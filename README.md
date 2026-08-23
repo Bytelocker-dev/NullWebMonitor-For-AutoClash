@@ -44,7 +44,7 @@ Installs to your phone's home screen as a PWA.
 Or from a terminal:
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/NullWebMonitor.git
+git clone https://github.com/Bytelocker-dev/NullWebMonitor.git
 cd NullWebMonitor
 npm install
 npm start
