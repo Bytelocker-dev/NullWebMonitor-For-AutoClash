@@ -14,7 +14,7 @@ let wiz = {
   emulator: "",
   adbPath: "",
   access: { host: "0.0.0.0", port: 8477 },
-  discord: { token: "", channelId: "" },
+  discord: { token: "", channelId: "", ownerId: "" },
   ntfy: { topic: "" },
   busy: false,
 };
@@ -169,6 +169,10 @@ function stepOptional() {
     + '<label class="field" style="margin-top:8px">Control panel channel ID'
     + '<input type="text" id="wizDChan" placeholder="right-click a channel with Developer Mode on"></label>'
     + '<div class="sub tiny" style="margin-top:4px">Where the buttons and daily summary are posted.</div>'
+    + '<label class="field" style="margin-top:8px">Your Discord user ID'
+    + '<input type="text" id="wizDOwner" placeholder="right-click your name with Developer Mode on"></label>'
+    + '<div class="sub tiny" style="margin-top:4px">Anyone else who can see the channel can otherwise press the control buttons, '
+    + 'including the full-desktop screenshot. Comma-separate more than one ID. Leave blank to allow anyone (not recommended).</div>'
     + '<label class="field" style="margin-top:8px">Control panel channel name'
     + '<input type="text" id="wizDChanName" placeholder="NullWebMonitor Panel"></label>'
     + '<div class="sub tiny" style="margin-top:4px">The bot renames that channel to this once, on start.</div>'
@@ -283,6 +287,7 @@ async function wizardNext() {
     discord: {
       token: ($("#wizDToken") || {}).value || "",
       channelId: ($("#wizDChan") || {}).value || "",
+      ownerId: ($("#wizDOwner") || {}).value || "",
       channelName: ($("#wizDChanName") || {}).value || "",
     },
     ntfy: { topic: ($("#wizNtfy") || {}).value || "" },
