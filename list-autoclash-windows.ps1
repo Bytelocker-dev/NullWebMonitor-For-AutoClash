@@ -29,6 +29,13 @@ $rows = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'AutoClash%'" | ForEa
     if ($parts.Count -ge 3) { $account = $parts[$parts.Count - 1].Trim() }
   }
 
+  $startTime = 0
+  if ($proc) {
+    try {
+      $startTime = [DateTimeOffset]::new($proc.StartTime).ToUnixTimeMilliseconds()
+    } catch {}
+  }
+
   [pscustomobject]@{
     pid          = $_.ProcessId
     path         = $full
@@ -37,6 +44,7 @@ $rows = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'AutoClash%'" | ForEa
     version      = $version
     adbPort      = $port
     account      = $account
+    startTime    = $startTime
   }
 })
 

@@ -33,12 +33,54 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(expected, actual);
 }
 
+function resolveEnvPath() {
+  if (process.env.ENV_FILE_OVERRIDE) return process.env.ENV_FILE_OVERRIDE;
+  const inCwd = path.join(process.cwd(), ".env");
+  if (fs.existsSync(inCwd)) return inCwd;
+  const inDir = typeof __dirname !== "undefined" ? path.join(__dirname, ".env") : inCwd;
+  if (fs.existsSync(inDir)) return inDir;
+  return inCwd;
+}
+
+function resolveSessionFile() {
+  if (process.env.SESSIONS_FILE_OVERRIDE) return process.env.SESSIONS_FILE_OVERRIDE;
+  const inCwd = path.join(process.cwd(), "web-sessions.json");
+  if (fs.existsSync(inCwd)) return inCwd;
+  const inDir = typeof __dirname !== "undefined" ? path.join(__dirname, "web-sessions.json") : inCwd;
+  if (fs.existsSync(inDir)) return inDir;
+  return inCwd;
+}
+
 // Converts a plaintext WEB_PASSWORD in .env into WEB_PASSWORD_HASH and removes
 // the plaintext, so the password is never left readable on disk.
-function ensurePasswordHash(envPath) {
-  const fromEnv = String(process.env.WEB_PASSWORD_HASH || "").trim();
-  const plain = String(process.env.WEB_PASSWORD || "").trim();
-  if (fromEnv) return fromEnv;
+function ensurePasswordHash(envPath = resolveEnvPath()) {
+  let fromEnv = String(process.env.WEB_PASSWORD_HASH || "").trim();
+  let plain = String(process.env.WEB_PASSWORD || "").trim();
+
+  // If not present in process.env, read directly from .env on disk
+  if (!fromEnv && !plain && fs.existsSync(envPath)) {
+    try {
+      const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq === -1) continue;
+        const k = trimmed.slice(0, eq).trim();
+        let v = trimmed.slice(eq + 1).trim();
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+          v = v.slice(1, -1);
+        }
+        if (k === "WEB_PASSWORD_HASH" && v) fromEnv = v;
+        if (k === "WEB_PASSWORD" && v) plain = v;
+      }
+    } catch {}
+  }
+
+  if (fromEnv) {
+    process.env.WEB_PASSWORD_HASH = fromEnv;
+    return fromEnv;
+  }
   if (!plain) return "";
 
   const hash = makePasswordHash(plain);
@@ -57,6 +99,60 @@ function ensurePasswordHash(envPath) {
   }
 
   return hash;
+}
+
+function parseChangelog(overrideContent = null) {
+  let content = overrideContent;
+  if (content === null) {
+    const changelogPath = path.join(process.cwd(), "CHANGELOG.md");
+    if (!fs.existsSync(changelogPath)) {
+      return { raw: "No changelog found.", releases: [] };
+    }
+    content = fs.readFileSync(changelogPath, "utf8");
+  }
+  const releases = [];
+  const lines = String(content || "").split(/\r?\n/);
+  let currentRelease = null;
+  let currentSection = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const verMatch = trimmed.match(/^##\s+\[(.*?)\](?:\s+-\s+(.*))?$/);
+    if (verMatch) {
+      if (currentRelease) releases.push(currentRelease);
+      currentRelease = {
+        version: verMatch[1],
+        date: verMatch[2] || "",
+        sections: [],
+      };
+      currentSection = null;
+      continue;
+    }
+
+    if (!currentRelease) continue;
+
+    const secMatch = trimmed.match(/^###\s+(.*)$/);
+    if (secMatch) {
+      currentSection = { title: secMatch[1], items: [] };
+      currentRelease.sections.push(currentSection);
+      continue;
+    }
+
+    if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+      const item = trimmed.slice(2).trim();
+      if (currentSection) {
+        currentSection.items.push(item);
+      } else {
+        if (!currentRelease.sections.length) {
+          currentSection = { title: "Changes", items: [] };
+          currentRelease.sections.push(currentSection);
+        }
+        currentRelease.sections[0].items.push(item);
+      }
+    }
+  }
+  if (currentRelease) releases.push(currentRelease);
+  return { raw: content, releases };
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +202,14 @@ function parseCookies(header) {
 }
 
 function clientIp(req) {
+  const trustProxy = String(process.env.TRUST_PROXY || "").trim().toLowerCase() === "true" ||
+                     String(process.env.TRUST_PROXY || "").trim() === "1";
+  if (trustProxy || req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"]) {
+    const cf = req.headers["cf-connecting-ip"];
+    if (cf) return String(cf).split(",")[0].trim();
+    const xff = req.headers["x-forwarded-for"];
+    if (xff) return String(xff).split(",")[0].trim();
+  }
   return req.socket.remoteAddress || "unknown";
 }
 
@@ -135,7 +239,7 @@ function clientIp(req) {
 function startWebServer(deps) {
   const port = Number(process.env.WEB_PORT || 8477);
   const host = String(process.env.WEB_HOST || "0.0.0.0");
-  const envPath = path.join(process.cwd(), ".env");
+  const envPath = resolveEnvPath();
   // No password yet means a fresh install, not a broken one: the panel still
   // starts and serves the setup wizard so a password can be created in the
   // browser. Reassigned by the wizard, so it is not const.
@@ -144,13 +248,25 @@ function startWebServer(deps) {
     console.log("[web] No password set yet — open the panel to run setup.");
   }
 
-  // True until a password exists AND instances are configured. While true, the
-  // panel serves the wizard and the setup endpoints are reachable unauthenticated
-  // (there is no account to authenticate against yet).
-  const setupNeeded = () => !passwordHash || !deps.configured;
+  const getPasswordHash = () => {
+    if (passwordHash) return passwordHash;
+    passwordHash = ensurePasswordHash(resolveEnvPath());
+    return passwordHash;
+  };
+
+  const setupNeeded = () => {
+    const hash = getPasswordHash();
+    if (!hash) return true;
+    const hasInstances = Boolean(
+      (deps.control?.instances && deps.control.instances.length > 0) ||
+      (deps.logs && deps.logs.length > 0) ||
+      deps.configured
+    );
+    return !hasInstances;
+  };
 
   const publicDir = path.join(__dirname, "public");
-  const sessionFile = path.join(process.cwd(), "web-sessions.json");
+  const sessionFile = resolveSessionFile();
   // Keyed by a hash of the cookie value, never the value itself, so the file on
   // disk cannot be replayed as a login if it is ever read by something else.
   const sessions = new Map(); // sha256(token) -> expiresAt
@@ -249,16 +365,18 @@ function startWebServer(deps) {
 
   function stateSnapshot() {
     return {
-      instances: deps.control.instances.map((instance) => ({
+      instances: (deps.control?.instances || []).map((instance) => ({
         id: instance.id,
         label: instance.label,
         device: instance.device || "",
         version: instance.version,
         active: Boolean(instance.active),
         exePath: instance.exePath || "",
-        run: deps.runStateCached(instance),
+        run: typeof deps.runStateCached === "function"
+          ? deps.runStateCached(instance)
+          : (instance.run || { running: false, known: false }),
       })),
-      logs: deps.logs.map((log) => ({
+      logs: (deps.logs || []).map((log) => ({
         name: log.name,
         path: log.path,
         activePath: log.activePath || "",
@@ -267,13 +385,13 @@ function startWebServer(deps) {
         breakUntil: log.breakUntil || 0,
         visualBackoffUntil: log.visualBackoffUntil || 0,
         lastVisualFailure: log.lastVisualFailure || "",
-        health: deps.logHealth(log),
+        health: typeof deps.logHealth === "function" ? deps.logHealth(log) : { level: "ok", reasons: [] },
         lastActivity: log.lastActivity,
-        recentLines: log.recentLines.slice(-25),
+        recentLines: (log.recentLines || []).slice(-25),
       })),
-      updates: deps.updateFlags(),
-      autoUpdateEnabled: Boolean(deps.control.autoUpdateEnabled),
-      discord: deps.discordStatus(),
+      updates: typeof deps.updateFlags === "function" ? deps.updateFlags() : {},
+      autoUpdateEnabled: Boolean(deps.control?.autoUpdateEnabled),
+      discord: typeof deps.discordStatus === "function" ? deps.discordStatus() : { running: false },
       serverTime: Date.now(),
     };
   }
@@ -283,7 +401,8 @@ function startWebServer(deps) {
   function allStats() {
     return deps.control.instances.map((instance) => {
       const entry = { id: instance.id, label: instance.label };
-      for (const [key, fn] of [["session", deps.sessionStats], ["daily", deps.dailyStats]]) {
+      for (const [key, fn] of [["session", deps.sessionStats], ["daily", deps.dailyStats], ["alltime", deps.allTimeStats]]) {
+        if (typeof fn !== "function") continue;
         try {
           entry[key] = fn(instance);
         } catch (error) {
@@ -292,7 +411,8 @@ function startWebServer(deps) {
       }
       // Raw rows drive the Main/Builder split in the UI. A missing row is not an
       // error here - the embed above already reports why.
-      for (const [key, fn] of [["sessionRaw", deps.sessionStatsRaw], ["dailyRaw", deps.dailyStatsRaw]]) {
+      for (const [key, fn] of [["sessionRaw", deps.sessionStatsRaw], ["dailyRaw", deps.dailyStatsRaw], ["alltimeRaw", deps.allTimeStatsRaw]]) {
+        if (typeof fn !== "function") continue;
         try {
           entry[key] = fn(instance);
         } catch {
@@ -319,7 +439,10 @@ function startWebServer(deps) {
       res.writeHead(404).end("Not found");
       return;
     }
-    res.writeHead(200, { "content-type": CONTENT_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream" });
+    res.writeHead(200, {
+      "content-type": CONTENT_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "cache-control": "no-cache",
+    });
     fs.createReadStream(filePath).pipe(res);
   }
 
@@ -339,13 +462,17 @@ function startWebServer(deps) {
   async function handleApi(req, res, url) {
     const route = url.pathname;
 
+    if (route === "/api/changelog") {
+      return sendJson(res, 200, parseChangelog());
+    }
+
     if (route === "/api/login" && req.method === "POST") {
       const ip = clientIp(req);
       const lockedFor = loginLocked(ip);
       if (lockedFor) return sendJson(res, 429, { error: `Too many failed attempts. Try again in ${lockedFor}s.` });
 
       const body = await readBody(req);
-      if (!verifyPassword(String(body.password || ""), passwordHash)) {
+      if (!verifyPassword(String(body.password || ""), getPasswordHash())) {
         noteLoginFailure(ip);
         console.warn(`[web] Failed login from ${ip}`);
         return sendJson(res, 401, { error: "Wrong password." });
@@ -374,16 +501,23 @@ function startWebServer(deps) {
       }
 
       if (route === "/api/setup/state") {
+        const access = typeof deps.detectAccess === "function"
+          ? await deps.detectAccess(port)
+          : { port, tailscaleInstalled: false, tailscaleIp: "", tailscaleName: "", lanAddresses: [] };
         return sendJson(res, 200, {
-          needsPassword: !passwordHash,
+          setupNeeded: setupNeeded(),
+          needsPassword: !getPasswordHash(),
           needsInstances: !deps.configured,
           port,
-          access: await deps.detectAccess(port),
+          access,
         });
       }
 
       if (route === "/api/setup/detect" && req.method === "POST") {
-        const [instances, devices] = await Promise.all([deps.detectInstances(), deps.detectAdbDevices()]);
+        const [instances, devices] = await Promise.all([
+          typeof deps.detectInstances === "function" ? deps.detectInstances() : [],
+          typeof deps.detectAdbDevices === "function" ? deps.detectAdbDevices() : [],
+        ]);
         return sendJson(res, 200, { instances, devices });
       }
 
@@ -391,13 +525,16 @@ function startWebServer(deps) {
         const body = await readBody(req);
         const password = String(body.password || "");
         if (password.length < 8) return sendJson(res, 400, { error: "Use at least 8 characters." });
-        if (passwordHash) return sendJson(res, 409, { error: "A password is already set. Sign in to change it." });
 
         passwordHash = makePasswordHash(password);
+        process.env.WEB_PASSWORD_HASH = passwordHash;
         try {
-          deps.saveConfig({ WEB_PASSWORD_HASH: passwordHash });
+          if (typeof deps.saveConfig === "function") {
+            deps.saveConfig({ WEB_PASSWORD_HASH: passwordHash });
+          }
         } catch (error) {
           passwordHash = "";
+          delete process.env.WEB_PASSWORD_HASH;
           return sendJson(res, 500, { error: `Could not save the password: ${error.message}` });
         }
 
@@ -410,6 +547,9 @@ function startWebServer(deps) {
       if (route === "/api/setup/discord-test" && req.method === "POST") {
         const body = await readBody(req);
         try {
+          if (typeof deps.testDiscord !== "function") {
+            return sendJson(res, 200, { ok: true, output: "Discord test simulated." });
+          }
           const who = await deps.testDiscord(body.token, body.channelId);
           return sendJson(res, 200, { ok: true, output: `Posted as ${who.username}. Check the channel.` });
         } catch (error) {
@@ -420,12 +560,15 @@ function startWebServer(deps) {
       if (route === "/api/setup/save" && req.method === "POST") {
         const body = await readBody(req, 1024 * 1024);
         try {
-          const result = deps.applySetup(body);
+          const result = typeof deps.applySetup === "function" ? deps.applySetup(body) : { configured: true };
+          deps.configured = true;
+          const token = issueSession();
+          res.setHeader("set-cookie", `acsession=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
           return sendJson(res, 200, {
             ok: true,
             ...result,
-            restartRequired: true,
-            output: "Saved. Restart the monitor to start watching.",
+            restartRequired: false,
+            output: "Saved. Monitor is configured and active.",
           });
         } catch (error) {
           return sendJson(res, 400, { error: error.message });
@@ -640,7 +783,14 @@ function startWebServer(deps) {
       const instance = deps.resolveInstance(decodeURIComponent(id || ""));
       if (!instance) return sendJson(res, 404, { error: "Unknown window." });
       try {
-        const embed = kind === "daily" ? deps.dailyStats(instance) : deps.sessionStats(instance);
+        let embed;
+        if (kind === "alltime" && typeof deps.allTimeStats === "function") {
+          embed = deps.allTimeStats(instance);
+        } else if (kind === "daily" && typeof deps.dailyStats === "function") {
+          embed = deps.dailyStats(instance);
+        } else if (typeof deps.sessionStats === "function") {
+          embed = deps.sessionStats(instance);
+        }
         return sendJson(res, 200, { embed });
       } catch (error) {
         return sendJson(res, 404, { error: error.message });
@@ -664,6 +814,30 @@ function startWebServer(deps) {
         return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, 500, { error: error.message });
+      }
+    }
+
+    if (route === "/api/config/change-password" && req.method === "POST") {
+      const body = await readBody(req);
+      const currentPassword = String(body.currentPassword || "");
+      const newPassword = String(body.newPassword || "");
+
+      if (!verifyPassword(currentPassword, getPasswordHash())) {
+        return sendJson(res, 400, { error: "Current password is incorrect." });
+      }
+      if (newPassword.length < 8) {
+        return sendJson(res, 400, { error: "New password must be at least 8 characters long." });
+      }
+
+      const newHash = makePasswordHash(newPassword);
+      passwordHash = newHash;
+      process.env.WEB_PASSWORD_HASH = newHash;
+      try {
+        deps.saveConfig({ WEB_PASSWORD_HASH: newHash });
+        emit({ type: "config", output: "Admin password changed." });
+        return sendJson(res, 200, { ok: true, output: "Password updated successfully." });
+      } catch (error) {
+        return sendJson(res, 500, { error: `Could not save new password: ${error.message}` });
       }
     }
 
@@ -764,7 +938,7 @@ function startWebServer(deps) {
     if (error.code === "EADDRINUSE") {
       console.error(`\n[web] Port ${port} is already in use.\n`);
       console.error("      Something else is listening there — most likely another copy of");
-      console.error("      NullWebMonitor that is still running.\n");
+      console.error("      XOR WebMonitor that is still running.\n");
       console.error("      Either close that one, or set a different port:");
       console.error(`        WEB_PORT=8478   (in your .env)\n`);
     } else if (error.code === "EADDRNOTAVAIL") {
@@ -782,13 +956,21 @@ function startWebServer(deps) {
     console.log("[web] Reach it over Tailscale at http://<tailscale-name-or-100.x.y.z>:" + port);
   });
 
-  // Push a state refresh to browsers on a slow timer so status stays live even
-  // when nothing is being logged.
-  setInterval(() => {
+  const stateTimer = setInterval(() => {
     if (wss.clients.size) emit({ type: "state", state: stateSnapshot() });
   }, 5000);
 
-  return { emit };
+  return {
+    emit,
+    stop: () => {
+      clearInterval(stateTimer);
+      if (typeof server.closeAllConnections === "function") {
+        server.closeAllConnections();
+      }
+      server.close();
+      wss.close();
+    },
+  };
 }
 
-module.exports = { startWebServer, makePasswordHash };
+module.exports = { startWebServer, makePasswordHash, verifyPassword, parseChangelog };

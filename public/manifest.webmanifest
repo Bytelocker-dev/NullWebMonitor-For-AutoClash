@@ -1,6 +1,6 @@
 {
-  "name": "NullWebMonitor for AutoClash",
-  "short_name": "NullWebMonitor",
+  "name": "XOR WebMonitor for AutoClash",
+  "short_name": "XOR WebMonitor",
   "description": "Self-hosted control panel for AutoClash — live view, stats, logs and remote config.",
   "start_url": "/",
   "scope": "/",

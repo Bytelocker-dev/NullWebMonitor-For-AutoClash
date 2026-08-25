@@ -1,11 +1,12 @@
 {
-  "name": "nullwebmonitor",
-  "version": "1.0.0",
-  "description": "Self-hosted web control panel for AutoClash — live view, stats, logs, incidents and remote config, reachable from your phone over Tailscale.",
+  "name": "xor-webmonitor",
+  "version": "2.0.0",
+  "description": "Self-hosted web control panel for AutoClash — live view, stats, logs, incidents and remote config, reachable from your phone over Tailscale or Cloudflare.",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
-    "test": "node test-web-server.js && node test-break.js && node test-parser.js && node test-config.js && node test-config-map.js && node test-setup.js && node test-port.js && node test-sessions.js && node test-routes.js && node test-resilience.js && node test-qr.js && node test-watchdog.js",
+    "reset-password": "node bot.js --reset-password",
+    "test": "node test-web-server.js && node test-break.js && node test-parser.js && node test-config.js && node test-config-map.js && node test-setup.js && node test-port.js && node test-sessions.js && node test-routes.js && node test-resilience.js && node test-qr.js && node test-watchdog.js && node test-password-reset.js && node test-same-folder.js && node test-changelog.js && node test-account-rotation.js && node test-alltime-stats.js",
     "check-secrets": "node scripts/check-secrets.js",
     "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File make-icons.ps1",
     "watch": "node watchdog.js"

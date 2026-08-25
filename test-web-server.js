@@ -44,9 +44,10 @@ const bot = fs.readFileSync(path.join(__dirname, "bot.js"), "utf8");
 const envHelpers = new Function(
   "fs",
   "path",
-  `${bot.match(/function readEnvFile[\s\S]*?\r?\n\}\r?\n/)[0]}
+  `${bot.match(/function resolveEnvPath[\s\S]*?\r?\n\}\r?\n/)[0]}
+   ${bot.match(/function readEnvFile[\s\S]*?\r?\n\}\r?\n/)[0]}
    ${bot.match(/function writeEnvFile[\s\S]*?\r?\n\}\r?\n/)[0]}
-   return { readEnvFile, writeEnvFile };`
+   return { resolveEnvPath, readEnvFile, writeEnvFile };`
 )(fs, path);
 
 let env = envHelpers.readEnvFile();

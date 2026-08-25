@@ -1,76 +1,52 @@
 param(
+  [string]$SourceImage = (Join-Path $PSScriptRoot "public\logo.png"),
   [string]$OutDir = (Join-Path $PSScriptRoot "public")
 )
-
-# Generates the PWA home-screen icons for NullWebMonitor. Run once:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File make-icons.ps1
-#
-# Same System.Drawing approach as resize-image.ps1, so no extra dependencies.
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
-function New-Icon {
-  param([int]$Size, [string]$Path)
+if (-not (Test-Path $OutDir)) {
+  New-Item -ItemType Directory -Path $OutDir | Out-Null
+}
 
-  $bitmap = New-Object System.Drawing.Bitmap($Size, $Size)
-  try {
-    $g = [System.Drawing.Graphics]::FromImage($bitmap)
+function Create-AppIcon {
+  param(
+    [string]$Source,
+    [string]$Destination,
+    [int]$Width,
+    [int]$Height
+  )
+
+  if (Test-Path $Source) {
+    $src = [System.Drawing.Image]::FromFile($Source)
     try {
-      $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-      $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
-
-      # Background matches the panel's --bg so the icon blends with the app.
-      $bg = [System.Drawing.ColorTranslator]::FromHtml("#0b0f16")
-      $g.Clear($bg)
-
-      # Rounded accent tile.
-      $accent = [System.Drawing.ColorTranslator]::FromHtml("#4c8dff")
-      $inset = [int]($Size * 0.13)
-      $box = $Size - (2 * $inset)
-      $radius = [int]($Size * 0.22)
-      $pathObj = New-Object System.Drawing.Drawing2D.GraphicsPath
+      $bmp = New-Object System.Drawing.Bitmap($Width, $Height)
       try {
-        $d = $radius * 2
-        $pathObj.AddArc($inset, $inset, $d, $d, 180, 90)
-        $pathObj.AddArc($inset + $box - $d, $inset, $d, $d, 270, 90)
-        $pathObj.AddArc($inset + $box - $d, $inset + $box - $d, $d, $d, 0, 90)
-        $pathObj.AddArc($inset, $inset + $box - $d, $d, $d, 90, 90)
-        $pathObj.CloseFigure()
-        $brush = New-Object System.Drawing.SolidBrush($accent)
-        try { $g.FillPath($brush, $pathObj) } finally { $brush.Dispose() }
-      } finally {
-        $pathObj.Dispose()
-      }
-
-      # "AC" wordmark, centred.
-      $fontSize = [float]($Size * 0.34)
-      $font = New-Object System.Drawing.Font("Segoe UI", $fontSize, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
-      try {
-        $format = New-Object System.Drawing.StringFormat
-        $format.Alignment = [System.Drawing.StringAlignment]::Center
-        $format.LineAlignment = [System.Drawing.StringAlignment]::Center
-        $white = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+        $g = [System.Drawing.Graphics]::FromImage($bmp)
         try {
-          $rect = New-Object System.Drawing.RectangleF(0, 0, $Size, $Size)
-          $g.DrawString("NW", $font, $white, $rect, $format)
+          $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+          $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+          $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+          $g.Clear([System.Drawing.ColorTranslator]::FromHtml("#0b0f16"))
+
+          $g.DrawImage($src, 0, 0, $Width, $Height)
         } finally {
-          $white.Dispose()
+          $g.Dispose()
         }
+        $bmp.Save($Destination, [System.Drawing.Imaging.ImageFormat]::Png)
+        Write-Output "Saved $Destination ($Width x $Height)"
       } finally {
-        $font.Dispose()
+        $bmp.Dispose()
       }
     } finally {
-      $g.Dispose()
+      $src.Dispose()
     }
-
-    $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
-    Write-Output "wrote $Path ($Size x $Size)"
-  } finally {
-    $bitmap.Dispose()
+  } else {
+    Write-Warning "Source image not found: $Source"
   }
 }
 
-if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
-New-Icon -Size 192 -Path (Join-Path $OutDir "icon-192.png")
-New-Icon -Size 512 -Path (Join-Path $OutDir "icon-512.png")
+Create-AppIcon -Source $SourceImage -Destination (Join-Path $OutDir "icon-192.png") -Width 192 -Height 192
+Create-AppIcon -Source $SourceImage -Destination (Join-Path $OutDir "icon-512.png") -Width 512 -Height 512
+Create-AppIcon -Source $SourceImage -Destination (Join-Path $OutDir "favicon.png") -Width 64 -Height 64

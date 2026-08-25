@@ -4,16 +4,54 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
+<script>
+  window.$ = (sel, root = document) => root.querySelector(sel);
+  window.$$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+  window.esc = (text) => String(text ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  window.md = (text) => esc(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\n/g, "<br>");
+  window.api = async function(path, options = {}) {
+    const res = await fetch(path, { credentials: "same-origin", ...options });
+    if (res.status === 401) {
+      if (!path.startsWith("/api/setup/") && typeof showLogin === "function") showLogin();
+      throw new Error("Signed out.");
+    }
+    const type = res.headers.get("content-type") || "";
+    if (!type.includes("application/json")) {
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      return res;
+    }
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    return body;
+  };
+  window.post = function(path, body) {
+    return api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+  };
+  window.toast = function(text, isError = false) {
+    const el = $("#toast");
+    if (!el) return;
+    el.textContent = String(text).split("\n").slice(0, 3).join("\n").slice(0, 300);
+    el.classList.toggle("err", isError);
+    el.classList.add("show");
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => el.classList.remove("show"), isError ? 5000 : 3000);
+  };
+</script>
 <script src="/config-map.js"></script>
 <script src="/qr.js"></script>
-<title>NullWebMonitor</title>
+<script src="/setup.js"></script>
+<script src="/guide.js"></script>
+<title>XOR WebMonitor</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0b0f16">
-<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="NullWebMonitor">
+<meta name="apple-mobile-web-app-title" content="XOR WebMonitor">
 <meta name="mobile-web-app-capable" content="yes">
 <style>
   :root {
@@ -25,6 +63,43 @@
     --r: 14px; --r-sm: 9px;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
   }
+
+  /* Switch toggle */
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .switch-row:last-child { border-bottom: none; }
+  .switch-row .label-col { flex: 1; }
+  .switch-row .label-col b { display: block; font-size: 14px; font-weight: 600; color: var(--text); }
+  .switch-row .label-col .desc { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .toggle-switch {
+    position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; cursor: pointer; inset: 0; background-color: var(--panel-3);
+    border: 1px solid var(--line); border-radius: 24px; transition: .2s;
+  }
+  .toggle-slider:before {
+    position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
+    background-color: var(--muted); border-radius: 50%; transition: .2s;
+  }
+  .toggle-switch input:checked + .toggle-slider {
+    background-color: var(--accent); border-color: var(--accent);
+  }
+  .toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(20px); background-color: #fff;
+  }
+
+  /* Eye reveal button & input actions */
+  .input-with-action { position: relative; display: flex; align-items: center; }
+  .input-with-action input { padding-right: 42px; }
+  .input-action-btn {
+    position: absolute; right: 8px; background: transparent; border: none;
+    color: var(--muted); padding: 4px 6px; cursor: pointer; font-size: 13px;
+  }
+  .input-action-btn:hover { color: var(--text); }
 
   /* A short banner on a card, tinted by what it is telling you. The left bar
      carries the meaning, so these stay readable next to each other. */
@@ -364,7 +439,7 @@
   details.cfg-group[open] > summary { margin-bottom: 6px; }
   .dirty { color: #f0c650; }
   .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px; }
-  .seg button { background: none; border: 0; color: var(--muted); padding: 6px 13px; border-radius: 7px; font-size: 13px; font-weight: 500; }
+  .seg button { background: none; border: 0; color: var(--muted); padding: 6px 13px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; user-select: none; }
   .seg button.on { background: var(--accent); color: #fff; }
 
   /* ---------------- settings ---------------- */
@@ -398,12 +473,41 @@
 </head>
 <body>
 
-<div id="setup"><div id="setupBody"></div></div>
+<div id="setup">
+  <div id="setupBody">
+    <div class="card wiz">
+      <div style="text-align:center;margin-bottom:12px"><img src="/logo.png" alt="XOR" style="width:48px;height:48px;border-radius:10px"></div>
+      <h2 style="text-align:center">Set up XOR WebMonitor</h2>
+      <div class="wiz-steps">
+        <span class="wiz-dot on">Password</span>
+        <span class="wiz-dot">Instances</span>
+        <span class="wiz-dot">Access</span>
+        <span class="wiz-dot">Optional</span>
+      </div>
+      <div class="wiz-body">
+        <p class="sub">Pick a password for this panel. It is stored only as a scrypt hash — the plaintext is never written to disk.</p>
+        <label class="field" style="margin-top:12px">Password
+          <input type="password" id="wizPass" autocomplete="new-password" placeholder="at least 8 characters">
+        </label>
+        <label class="field" style="margin-top:10px">Repeat
+          <input type="password" id="wizPass2" autocomplete="new-password">
+        </label>
+        <div class="sub tiny" id="wizPassErr" style="color:#ff8a85;margin-top:8px"></div>
+      </div>
+      <div class="btn-row" style="margin-top:18px">
+        <button class="btn primary" id="wizNext">Create password</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="login">
   <form id="loginForm">
-    <h1>NullWebMonitor</h1>
-    <div class="sub">Sign in to control the bot.</div>
+    <div style="text-align:center;margin-bottom:8px">
+      <img src="/logo.png" alt="XOR Logo" style="width:68px;height:68px;border-radius:12px;display:inline-block;box-shadow:0 4px 12px rgba(0,0,0,0.5)">
+    </div>
+    <h1 style="text-align:center">XOR WebMonitor</h1>
+    <div class="sub" style="text-align:center">Sign in to manage and monitor AutoClash.</div>
     <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
     <button class="btn primary block" type="submit">Sign in</button>
     <div class="sub" id="loginError" style="color:#ff8a85"></div>
@@ -413,7 +517,8 @@
 <div id="app">
   <header>
     <span class="dot" id="liveDot" title="Live connection"></span>
-    <h1>NullWebMonitor</h1>
+    <img src="/favicon.png" alt="XOR" style="width:22px;height:22px;border-radius:4px;vertical-align:middle">
+    <h1>XOR WebMonitor</h1>
     <button class="btn sm ghost" id="logout">Sign out</button>
   </header>
 
@@ -447,36 +552,34 @@
 
     <section id="tab-live" hidden>
       <div class="card">
-        <h2>
-          Live emulator view
-          <span class="spacer"></span>
+        <h2>Live view <span class="spacer"></span>
           <span class="seg" id="liveRate">
             <button data-rate="1000">1s</button>
             <button data-rate="2000" class="on">2s</button>
             <button data-rate="5000">5s</button>
-            <button data-rate="0">Off</button>
+            <button data-rate="0">Pause</button>
           </span>
         </h2>
-        <div class="sub">Auto-captured over ADB and downscaled, so it stays light on mobile data.</div>
+        <div class="sub">Streams downscaled screenshots every two seconds. Tap anywhere on the screen to click in-game.</div>
         <div class="btn-row" style="margin-top:12px">
           <button class="btn sm" id="tapToggle">Tap mode: off</button>
-          <span class="sub tiny" style="align-self:center">With tap mode on, clicking a screen taps the emulator there.</span>
         </div>
       </div>
-      <div class="screens" id="screens"></div>
+      <div class="screens" id="screens" style="margin-top:14px"></div>
     </section>
 
     <section id="tab-stats" hidden>
       <div class="card">
         <h2>
-          Stats
+          Farming statistics
           <span class="spacer"></span>
           <span class="seg" id="statsRange">
             <button data-range="session" class="on">Session</button>
             <button data-range="daily">Daily</button>
+            <button data-range="alltime">All-Time</button>
           </span>
         </h2>
-        <div class="sub">Read from AutoClash's stats.db. Refreshes every 15 seconds.</div>
+        <div class="sub">Aggregated from session logs and stats.db. Refreshes every 15 seconds.</div>
       </div>
       <div id="statsOut" class="grid"></div>
       <div class="card">
@@ -493,7 +596,7 @@
 
     <section id="tab-config" hidden>
       <div class="card">
-        <h2>Bot settings<span class="spacer"></span><span class="seg" id="cfgInstance"></span></h2>
+        <h2>AutoClash Configuration<span class="spacer"></span><span class="seg" id="cfgInstance"></span></h2>
         <div class="sub">AutoClash rewrites these files while it runs, so editing is only possible once the exe is closed. Every save keeps a backup.</div>
       </div>
       <div id="cfgLock"></div>
@@ -503,7 +606,7 @@
     <section id="tab-incidents" hidden>
       <div class="card">
         <h2>
-          Incidents
+          Incident Log
           <span class="spacer"></span>
           <span class="seg" id="incidentFilter">
             <button data-sev="all" class="on">All</button>
@@ -511,7 +614,7 @@
             <button data-sev="withpic">With photo</button>
           </span>
         </h2>
-        <div class="sub">Crashes, recoveries and updates, with a screenshot saved at the moment it happened. Kept separately from the temporary screenshots, so these are not swept away.</div>
+        <div class="sub">Captured visual detection failures, connection losses, and crash events with screenshots. Kept separately from temporary screenshots.</div>
       </div>
       <div id="incidentsOut" class="grid"></div>
     </section>
@@ -537,34 +640,68 @@
       </div>
     </section>
 
+    <section id="tab-changelog" hidden>
+      <div class="card">
+        <h2>Changelog &amp; Updates <span class="spacer"></span><span class="pill" id="changelogVersion">v2.0.0</span></h2>
+        <div class="sub">Release history and updates. Automatically synced from GitHub repository.</div>
+      </div>
+      <div id="changelogBody"></div>
+    </section>
+
     <section id="tab-guide" hidden>
       <div class="card">
         <h2>Setup &amp; User Guide</h2>
-        <div class="sub">Everything you need to configure and run this, including the Discord walkthrough.</div>
+        <div class="sub">Everything you need to configure and run XOR WebMonitor.</div>
       </div>
       <div id="guideBody"></div>
     </section>
 
     <section id="tab-settings" hidden>
       <div class="card">
-        <h2>Phone alerts<span class="spacer"></span><span id="pushPill" class="pill">off</span></h2>
+        <h2>Change Password <span class="spacer"></span><span class="pill">Security</span></h2>
+        <div class="sub">Update the web panel master password. Plaintext is never stored.</div>
+        <form id="changePasswordForm" style="display:grid;gap:10px;margin-top:12px">
+          <label class="field">Current password
+            <input type="password" id="currPassInput" autocomplete="current-password" placeholder="Current password" required>
+          </label>
+          <div class="grid" style="grid-template-columns:1fr 1fr;gap:8px">
+            <label class="field">New password
+              <input type="password" id="newPassInput" autocomplete="new-password" placeholder="At least 8 chars" required>
+            </label>
+            <label class="field">Confirm new password
+              <input type="password" id="confirmPassInput" autocomplete="new-password" placeholder="Repeat new password" required>
+            </label>
+          </div>
+          <div class="btn-row" style="margin-top:4px">
+            <button class="btn primary sm" type="submit" id="submitPassChange">Update password</button>
+            <span class="sub tiny" id="passChangeMsg" style="align-self:center"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Phone alerts <span class="spacer"></span><span id="pushPill" class="pill">off</span></h2>
         <div class="sub" id="pushInfo"></div>
         <div class="btn-row" style="margin-top:12px">
-          <button class="btn" id="pushTest">Send test notification</button>
+          <button class="btn sm" id="pushTest">Send test notification</button>
         </div>
       </div>
+
       <div class="card">
-        <h2>Open on your phone</h2>
-        <div class="sub">Scan with the phone camera. It has to be on the same Tailscale network or the same Wi-Fi.</div>
+        <h2>Remote &amp; Phone Access</h2>
+        <div class="sub">Scan with your camera or connect over Tailscale / Cloudflare Tunnel.</div>
         <div id="accessOut" class="access"></div>
       </div>
+
       <div class="card">
-        <h2>Settings</h2>
-        <div class="sub">Saved to .env. Restart the monitor to apply. Secrets stay hidden and are kept if left blank.</div>
+        <h2>Options &amp; Configuration</h2>
+        <div class="sub">Settings are saved to .env. Restart the monitor to apply changes. Secrets stay protected.</div>
         <form id="settingsForm"></form>
-        <div class="btn-row" style="margin-top:14px">
-          <button class="btn primary" id="saveSettings">Save</button>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn primary" id="saveSettings">Save settings</button>
           <button class="btn" id="reloadSettings">Reload</button>
+          <button class="btn" id="rerunSetupBtn">Re-run Setup Wizard</button>
+          <button class="btn bad sm" id="restartMonitorBtn" style="margin-left:auto">Restart monitor</button>
         </div>
       </div>
     </section>
@@ -574,8 +711,6 @@
 <div id="toast"></div>
 
 <script>
-const $ = (sel, root = document) => root.querySelector(sel);
-const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const SECRET_KEYS = ["DISCORD_TOKEN", "WEB_PASSWORD", "WEB_PASSWORD_HASH"];
 const MAX_LOG_CHARS = 140000;
 
@@ -594,39 +729,6 @@ let unseenIncidents = 0;
 
 // ---------- helpers ----------
 
-function toast(text, isError = false) {
-  const el = $("#toast");
-  el.textContent = String(text).split("\n").slice(0, 3).join("\n").slice(0, 300);
-  el.classList.toggle("err", isError);
-  el.classList.add("show");
-  clearTimeout(el._timer);
-  el._timer = setTimeout(() => el.classList.remove("show"), isError ? 5000 : 3000);
-}
-
-async function api(path, options = {}) {
-  const res = await fetch(path, { credentials: "same-origin", ...options });
-  if (res.status === 401) { showLogin(); throw new Error("Signed out."); }
-  const type = res.headers.get("content-type") || "";
-  if (!type.includes("application/json")) {
-    if (!res.ok) throw new Error(`Request failed (${res.status})`);
-    return res;
-  }
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-  return body;
-}
-
-function post(path, body) {
-  return api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
-}
-
-const esc = (text) => String(text ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-// Discord embeds use **bold**; render it instead of showing the asterisks.
-// Discord markup -> HTML: **bold**, `monospace`, newlines.
-const md = (text) => esc(text)
-  .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-  .replace(/`([^`]+)`/g, "<code>$1</code>")
-  .replace(/\n/g, "<br>");
 const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 function ago(ms) {
@@ -648,10 +750,10 @@ function isBreak(log) {
 
 function breakLeft(log) {
   if (!log.breakUntil || Date.now() >= log.breakUntil) return "";
-  const seconds = Math.round((log.breakUntil - Date.now()) / 1000);
-  if (seconds < 60) return `${seconds}s left`;
-  const minutes = Math.floor(seconds / 60);
-  return minutes < 60 ? `${minutes}m left` : `${Math.floor(minutes / 60)}h ${minutes % 60}m left`;
+  const totalSeconds = Math.max(0, Math.round((log.breakUntil - Date.now()) / 1000));
+  const min = Math.floor(totalSeconds / 60);
+  const sec = totalSeconds % 60;
+  return `${min}:${String(sec).padStart(2, "0")} left`;
 }
 
 // A countdown answers "how long"; the useful question on a phone at 3am is
@@ -668,8 +770,7 @@ function breakBanner(log) {
   const left = breakLeft(log);
   const why = '<div class="sub tiny">The bot closes Clash during a break, so a quiet log is expected.</div>';
   if (!at) return '<div class="note brk"><b>On a humanized break</b>' + why + '</div>';
-  return '<div class="note brk"><b>On a break until ' + at + '</b>'
-    + (left ? ' <span class="sub tiny">(' + left + ')</span>' : "")
+  return `<div class="note brk"><b>On a break until ${at}</b> <span class="break-timer" data-until="${log.breakUntil || 0}" style="color:var(--accent);font-weight:600;margin-left:4px">(${left})</span>`
     + why + '</div>';
 }
 
@@ -691,9 +792,8 @@ function statusTone(log) {
 }
 
 function statusLabel(log) {
-  if (!isBreak(log)) return log.status;
-  const left = breakLeft(log);
-  return left ? `break · ${left}` : "break";
+  if (isBreak(log)) return "break";
+  return log.status;
 }
 
 function renderEmbed(embed) {
@@ -706,37 +806,43 @@ function renderEmbed(embed) {
 // ---------- login ----------
 
 function showLogin() {
-  $("#setup").classList.remove("show");
-  $("#login").classList.add("show");
-  $("#app").classList.remove("show");
+  $("#setup")?.classList.remove("show");
+  $("#login")?.classList.add("show");
+  $("#app")?.classList.remove("show");
   if (socket) { socket.close(); socket = null; }
-  stopLive();
-  clearInterval(statsTimer);
+  if (typeof stopLive === "function") stopLive();
+  if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
 }
 
 async function showApp() {
-  $("#setup").classList.remove("show");
-  $("#login").classList.remove("show");
-  $("#app").classList.add("show");
-  connect();
-  await refresh();
-  selectTab(activeTab);
-  loadSettings();
+  $("#setup")?.classList.remove("show");
+  $("#login")?.classList.remove("show");
+  $("#app")?.classList.add("show");
+  try {
+    connect();
+    await refresh();
+    selectTab(activeTab);
+    loadSettings();
+  } catch (err) {
+    console.error("showApp error:", err);
+  }
 }
 
-$("#loginForm").addEventListener("submit", async (event) => {
+$("#loginForm")?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  $("#loginError").textContent = "";
+  const errEl = $("#loginError");
+  if (errEl) errEl.textContent = "";
   try {
-    await post("/api/login", { password: $("#password").value });
-    $("#password").value = "";
-    showApp();
+    const pwEl = $("#password");
+    await post("/api/login", { password: pwEl ? pwEl.value : "" });
+    if (pwEl) pwEl.value = "";
+    await showApp();
   } catch (error) {
-    $("#loginError").textContent = error.message;
+    if (errEl) errEl.textContent = error.message;
   }
 });
 
-$("#logout").addEventListener("click", async () => {
+$("#logout")?.addEventListener("click", async () => {
   await post("/api/logout").catch(() => {});
   showLogin();
 });
@@ -828,6 +934,7 @@ function renderTabs() {
     <button data-tab="config">Config</button>
     <button data-tab="incidents">Incidents${unseenIncidents ? `<span class="badge warn"></span>` : ""}</button>
     <button data-tab="discord">Discord<span class="badge ${state.discord?.running ? "" : "off"}"></span></button>
+    <button data-tab="changelog">Changelog</button>
     <button data-tab="guide">Guide</button>
     <button data-tab="settings">Settings</button>`;
   $$("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === activeTab));
@@ -870,6 +977,40 @@ function renderTabs() {
   }
 }
 
+async function loadChangelog() {
+  const body = $("#changelogBody");
+  if (!body) return;
+  try {
+    const data = await api("/api/changelog");
+    if (!data.releases || !data.releases.length) {
+      body.innerHTML = '<div class="card sub">No release history found.</div>';
+      return;
+    }
+    if (data.releases[0]?.version) {
+      const el = $("#changelogVersion");
+      if (el) el.textContent = `v${data.releases[0].version}`;
+    }
+    body.innerHTML = data.releases.map((rel) => {
+      const sections = (rel.sections || []).map((sec) => `
+        <div style="margin-top:12px">
+          <h3 style="font-size:14.5px;color:var(--accent);margin:0 0 6px">${esc(sec.title)}</h3>
+          <ul class="guide-list" style="margin:4px 0 10px">
+            ${(sec.items || []).map((item) => `<li>${esc(item)}</li>`).join("")}
+          </ul>
+        </div>
+      `).join("");
+      return `
+        <div class="card" style="margin-top:12px">
+          <h2>Version ${esc(rel.version)} <span class="spacer"></span><span class="sub tiny">${esc(rel.date)}</span></h2>
+          ${sections || '<div class="sub">Release notes available on GitHub.</div>'}
+        </div>
+      `;
+    }).join("");
+  } catch (error) {
+    body.innerHTML = `<div class="card sub">${esc(error.message)}</div>`;
+  }
+}
+
 function selectTab(name) {
   activeTab = name;
   $$("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
@@ -879,7 +1020,8 @@ function selectTab(name) {
   if (name === "stats") { loadStats(); loadCharts(); loadSummary(); statsTimer = setInterval(loadStats, 15000); }
   else clearInterval(statsTimer);
   if (name === "discord") loadDiscord();
-  if (name === "settings") { loadPush(); loadAccess(); }
+  if (name === "changelog") loadChangelog();
+  if (name === "settings") { loadPush(); loadAccess(); loadSettings(); }
   if (name === "config") loadConfig();
   if (name === "guide") renderGuide();
   if (name === "incidents") { unseenIncidents = 0; loadIncidents(); renderTabs(); }
@@ -895,7 +1037,7 @@ function selectTab(name) {
   }
 }
 
-$("#tabs").addEventListener("click", (event) => {
+$("#tabs")?.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (button) selectTab(button.dataset.tab);
 });
@@ -920,11 +1062,27 @@ function render() {
         ${esc(log.name)} · ${esc(statusLabel(log))}
       </span>`).join("") + `</div>`;
 
-  $("#instances").innerHTML = state.instances.map((i) => `
+  $("#instances").innerHTML = state.instances.map((i) => {
+    let accountBadge = "";
+    if (i.run?.account) {
+      accountBadge = `
+        <div style="display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:6px;background:var(--panel-2);border:1px solid var(--line-soft);border-radius:var(--r-sm);padding:4px 8px;font-size:12.5px">
+          <span>🏰 <b>${esc(i.run.account)}</b></span>
+          ${i.run.thLevel ? `<span class="pill" style="font-size:11px;padding:1px 6px">${esc(i.run.thLevel)}</span>` : ""}
+          ${i.run.multiVillage?.enabled && i.run.running && (i.run.multiVillage.switchDueAt || i.run.multiVillage.remainingText) ? `
+            <span class="mv-timer" data-due="${i.run.multiVillage.switchDueAt || 0}" style="color:var(--accent);font-weight:500">⏳ ${esc(i.run.multiVillage.remainingText || "calculating...")}</span>
+            ${i.run.multiVillage.nextAccount ? `<span class="sub tiny" style="color:var(--muted)">→ Next: ${esc(i.run.multiVillage.nextAccount)}</span>` : ""}
+          ` : ""}
+        </div>
+      `;
+    }
+
+    return `
     <div class="card">
       <h2>${esc(i.label)}</h2>
       <div class="sub tiny">${esc(i.device || "no ADB device")} &middot; ${esc(i.version)} &middot; AutoStart ${i.active ? "on" : "off"}</div>
-      <div class="sub tiny">${i.run && i.run.running ? `${i.run.version ? "v" + esc(i.run.version) : "running"}${i.run.account ? " &middot; " + esc(i.run.account) : ""}` : (i.run && i.run.known ? "<span style='color:var(--dim)'>exe not running</span>" : "&nbsp;")}</div>
+      <div class="sub tiny" style="margin-top:2px">${i.run && i.run.running ? `${i.run.version ? "v" + esc(i.run.version) : "running"}` : (i.run && i.run.known ? "<span style='color:var(--dim)'>exe not running</span>" : "&nbsp;")}</div>
+      ${accountBadge}
       <div class="btn-group" style="margin-top:13px">
         <button class="btn good" data-act="start" data-id="${esc(i.id)}">Start</button>
         <button class="btn" data-act="pause" data-id="${esc(i.id)}">Pause</button>
@@ -938,7 +1096,8 @@ function render() {
       </div>
       <div class="divider"></div>
       <button class="btn sm block" data-check="${esc(i.id)}">Check for update</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 
   for (const log of state.logs) {
     const pill = $(`[data-logpill="${CSS.escape(log.name)}"]`);
@@ -1093,7 +1252,7 @@ function stopLive() {
   liveTimers.clear();
 }
 
-$("#liveRate").addEventListener("click", (event) => {
+$("#liveRate")?.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   $$("#liveRate button").forEach((b) => b.classList.toggle("on", b === button));
@@ -1101,7 +1260,7 @@ $("#liveRate").addEventListener("click", (event) => {
   if (activeTab === "live") startLive();
 });
 
-$("#tapToggle").addEventListener("click", (event) => {
+$("#tapToggle")?.addEventListener("click", (event) => {
   tapMode = !tapMode;
   event.target.textContent = `Tap mode: ${tapMode ? "on" : "off"}`;
   event.target.classList.toggle("bad", tapMode);
@@ -1110,7 +1269,7 @@ $("#tapToggle").addEventListener("click", (event) => {
 
 // Click position -> emulator tap. The image uses object-fit: contain, so the
 // letterboxed bars have to be subtracted before working out the ratio.
-$("#screens").addEventListener("click", async (event) => {
+$("#screens")?.addEventListener("click", async (event) => {
   if (!tapMode) return;
   const img = event.target.closest(".screen-body img");
   if (!img) return;
@@ -1151,14 +1310,22 @@ async function loadStats() {
   try {
     const { instances } = await api("/api/stats/all");
     $("#statsOut").innerHTML = instances.map((entry) => {
-      const raw = statsRange === "daily" ? entry.dailyRaw : entry.sessionRaw;
+      const raw = statsRange === "alltime"
+        ? entry.alltimeRaw
+        : statsRange === "daily"
+          ? entry.dailyRaw
+          : entry.sessionRaw;
       const error = entry[`${statsRange}Error`];
       const embed = entry[statsRange];
+      const rangeLabel = statsRange === "alltime" ? "All-Time" : statsRange === "daily" ? "Daily" : "Session";
       return `<div class="card">
-        <h2>${esc(entry.label)}<span class="spacer"></span><span class="pill">${statsRange}</span></h2>
+        <h2>${esc(entry.label)}<span class="spacer"></span><span class="pill">${rangeLabel}</span></h2>
         ${raw ? statsBody(raw, statsRange) : `<div class="sub" style="margin-top:10px">${esc(error || "No stats found.")}</div>`}
         ${raw && statsRange === "daily" && Number(raw.sessions) === 1
           ? '<div class="sub tiny" style="margin-top:10px">Only one session so far today, so these match the session view.</div>'
+          : ""}
+        ${raw && statsRange === "alltime" && raw.firstDate && raw.lastDate
+          ? `<div class="sub tiny" style="margin-top:10px">Lifetime tracking from ${esc(raw.firstDate)} to ${esc(raw.lastDate)}.</div>`
           : ""}
         ${raw ? `<div class="sub tiny" style="margin-top:12px">Source: ${esc(raw.source || "stats.db")}${embed ? "" : ""}</div>` : ""}
       </div>`;
@@ -1182,10 +1349,15 @@ function statsBody(raw, range) {
   const mainAttacks = Number(s.total_attacks || 0);
   const attackRate = hours >= 0.1 && mainAttacks ? ` · ${(mainAttacks / hours).toFixed(1)}/h` : "";
   const sessions = Number(raw.sessions || 0);
-  const dayHeader = sessions
-    ? `${esc(raw.date)} · ${sessions} session${sessions === 1 ? "" : "s"}`
-    : esc(raw.date);
-  const header = range === "daily" && raw.date ? dayHeader : formatRuntime(runtime);
+  let header = formatRuntime(runtime);
+  if (range === "daily" && raw.date) {
+    header = sessions
+      ? `${esc(raw.date)} · ${sessions} session${sessions === 1 ? "" : "s"}`
+      : esc(raw.date);
+  } else if (range === "alltime") {
+    const daysText = raw.days ? ` (${raw.days} day${raw.days === 1 ? "" : "s"})` : "";
+    header = `${formatRuntime(runtime)} · ${sessions} session${sessions === 1 ? "" : "s"}${daysText}`;
+  }
 
   const main = `
     <div class="base-head">🏰 Main Base</div>
@@ -1237,7 +1409,7 @@ function formatRuntime(seconds) {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
-$("#statsRange").addEventListener("click", (event) => {
+$("#statsRange")?.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   $$("#statsRange button").forEach((b) => b.classList.toggle("on", b === button));
@@ -1392,25 +1564,35 @@ async function loadSummary() {
   }
 }
 
-$("#reloadSummary").addEventListener("click", loadSummary);
+$("#reloadSummary")?.addEventListener("click", loadSummary);
 
 // ---------- push ----------
 
 async function loadPush() {
   try {
     const status = await api("/api/push");
-    $("#pushPill").textContent = status.enabled ? "on" : "off";
-    $("#pushPill").className = `pill ${status.enabled ? "active" : ""}`;
-    $("#pushInfo").innerHTML = status.enabled
-      ? `Alerts go to <code>${esc(status.server)}</code> at severity <strong>${esc(status.minSeverity)}</strong> and above. Subscribe to the same topic in the ntfy app on your phone.`
-      : `Off. Set <code>NTFY_ENABLED=true</code> and a <code>NTFY_TOPIC</code> below, then restart the monitor. Use a long random topic name — anyone who knows it can read your alerts.`;
-    $("#pushTest").disabled = !status.enabled;
+    const pill = $("#pushPill");
+    if (pill) {
+      pill.textContent = status.enabled ? "on" : "off";
+      pill.className = `pill ${status.enabled ? "active" : ""}`;
+    }
+    const info = $("#pushInfo");
+    if (info) {
+      info.innerHTML = status.enabled
+        ? `Alerts go to <code>${esc(status.server)}</code> at severity <strong>${esc(status.minSeverity)}</strong> and above. Subscribe to the same topic in the ntfy app on your phone.`
+        : `Off. Set <code>NTFY_ENABLED=true</code> and a <code>NTFY_TOPIC</code> below, then restart the monitor. Use a long random topic name — anyone who knows it can read your alerts.`;
+    }
+    const btn = $("#pushTest");
+    if (btn) btn.disabled = !status.enabled;
   } catch (error) {
-    if (error.message !== "Signed out.") $("#pushInfo").textContent = error.message;
+    if (error.message !== "Signed out.") {
+      const info = $("#pushInfo");
+      if (info) info.textContent = error.message;
+    }
   }
 }
 
-$("#pushTest").addEventListener("click", async (event) => {
+$("#pushTest")?.addEventListener("click", async (event) => {
   event.target.disabled = true;
   try {
     const result = await post("/api/push/test");
@@ -1592,7 +1774,7 @@ function cfgNote(key, value) {
   else cfgEdits[key] = value;
 }
 
-$("#tab-config").addEventListener("click", async (event) => {
+$("#tab-config")?.addEventListener("click", async (event) => {
   const toggle = event.target.closest("[data-cfgbool]");
   if (toggle && !toggle.classList.contains("disabled")) {
     cfgNote(toggle.dataset.cfgbool, !toggle.classList.contains("on"));
@@ -1662,7 +1844,7 @@ $("#tab-config").addEventListener("click", async (event) => {
 
 // Text, number and JSON fields commit on change rather than per keystroke, so
 // the form does not re-render while typing.
-$("#tab-config").addEventListener("change", (event) => {
+$("#tab-config")?.addEventListener("change", (event) => {
   const el = event.target;
   if (el.dataset.cfgkey) {
     cfgNote(el.dataset.cfgkey, el.type === "number" ? Number(el.value) : el.value);
@@ -1727,7 +1909,7 @@ function renderIncidents() {
     : `<div class="card sub">Nothing recorded yet. Crashes, recoveries and updates will show up here.</div>`;
 }
 
-$("#incidentFilter").addEventListener("click", (event) => {
+$("#incidentFilter")?.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   $$("#incidentFilter button").forEach((b) => b.classList.toggle("on", b === button));
@@ -1742,17 +1924,27 @@ async function loadDiscord() {
     const status = await api("/api/discord");
     state.discord = status;
     const pill = $("#discordPill");
-    pill.textContent = !status.configured ? "not configured" : status.running ? (status.connected ? "running" : "starting") : "stopped";
-    pill.className = `pill ${!status.configured ? "" : status.running ? "active" : "paused"}`;
-    $("#discordInfo").innerHTML = !status.configured
-      ? "No DISCORD_TOKEN / DISCORD_CHANNEL_ID set. Add them in Settings, then restart the monitor."
-      : `Gateway ${status.connected ? "connected" : "not connected"}. Control panel ${status.controlPanelEnabled ? "enabled" : "disabled"}.
-         ${status.running ? `Started ${ago(status.startedAt)}.` : ""}
-         ${status.lastError ? `<br><span style="color:#ff8a85">Last error: ${esc(status.lastError)}</span>` : ""}`;
-    $("#discordStart").disabled = !status.configured || status.running;
-    $("#discordStop").disabled = !status.configured || !status.running;
-    $("#discordChannels").innerHTML = (status.logChannels || [])
-      .map((c) => `<div>${esc(c.name)} &rarr; <code>${esc(c.channelId)}</code></div>`).join("") || "None.";
+    if (pill) {
+      pill.textContent = !status.configured ? "not configured" : status.running ? (status.connected ? "running" : "starting") : "stopped";
+      pill.className = `pill ${!status.configured ? "" : status.running ? "active" : "paused"}`;
+    }
+    const info = $("#discordInfo");
+    if (info) {
+      info.innerHTML = !status.configured
+        ? "No DISCORD_TOKEN / DISCORD_CHANNEL_ID set. Add them in Settings, then restart the monitor."
+        : `Gateway ${status.connected ? "connected" : "not connected"}. Control panel ${status.controlPanelEnabled ? "enabled" : "disabled"}.
+           ${status.running ? `Started ${ago(status.startedAt)}.` : ""}
+           ${status.lastError ? `<br><span style="color:#ff8a85">Last error: ${esc(status.lastError)}</span>` : ""}`;
+    }
+    const startBtn = $("#discordStart");
+    if (startBtn) startBtn.disabled = !status.configured || status.running;
+    const stopBtn = $("#discordStop");
+    if (stopBtn) stopBtn.disabled = !status.configured || !status.running;
+    const chanEl = $("#discordChannels");
+    if (chanEl) {
+      chanEl.innerHTML = (status.logChannels || [])
+        .map((c) => `<div>${esc(c.name)} &rarr; <code>${esc(c.channelId)}</code></div>`).join("") || "None.";
+    }
     renderTabs();
   } catch (error) {
     if (error.message !== "Signed out.") toast(error.message, true);
@@ -1760,7 +1952,7 @@ async function loadDiscord() {
 }
 
 for (const [id, action] of [["#discordStart", "start"], ["#discordStop", "stop"]]) {
-  $(id).addEventListener("click", async (event) => {
+  $(id)?.addEventListener("click", async (event) => {
     event.target.disabled = true;
     try {
       const result = await post("/api/discord", { action });
@@ -1827,21 +2019,22 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-$("#fullDesktop").addEventListener("click", async (event) => {
+$("#fullDesktop")?.addEventListener("click", async (event) => {
   event.target.disabled = true;
-  $("#desktopOut").innerHTML = `<div class="sub" style="margin-top:12px">Capturing desktop...</div>`;
+  const out = $("#desktopOut");
+  if (out) out.innerHTML = `<div class="sub" style="margin-top:12px">Capturing desktop...</div>`;
   try {
     const res = await api(`/api/fullscreen?t=${Date.now()}`);
     const url = URL.createObjectURL(await res.blob());
-    $("#desktopOut").innerHTML = `<img src="${url}" alt="desktop" style="width:100%;border-radius:9px;border:1px solid var(--line-soft);margin-top:12px;display:block">`;
+    if (out) out.innerHTML = `<img src="${url}" alt="desktop" style="width:100%;border-radius:9px;border:1px solid var(--line-soft);margin-top:12px;display:block">`;
   } catch (error) {
-    $("#desktopOut").innerHTML = `<div class="sub" style="margin-top:12px">${esc(error.message)}</div>`;
+    if (out) out.innerHTML = `<div class="sub" style="margin-top:12px">${esc(error.message)}</div>`;
   } finally {
     event.target.disabled = false;
   }
 });
 
-$("#restartBot").addEventListener("click", async () => {
+$("#restartBot")?.addEventListener("click", async () => {
   if (!confirm("Restart the monitor process? AutoClash keeps running; only this monitor restarts.")) return;
   await post("/api/restart").catch(() => {});
   toast("Restarting. Reconnecting shortly...");
@@ -1852,49 +2045,191 @@ $("#restartBot").addEventListener("click", async () => {
 async function loadSettings() {
   try {
     const { env } = await api("/api/config");
-    const groups = {
-      Discord: (k) => k.startsWith("DISCORD") || k.startsWith("AUTOCONTROL_CHANNEL") || k.endsWith("CHANNEL_ID") || k.endsWith("CHANNEL_NAME") || k.startsWith("LIVE_LOG"),
-      "Web panel": (k) => k.startsWith("WEB_") || k.startsWith("LIVE_VIEW"),
-      AutoClash: (k) => k.startsWith("AUTOCONTROL") || k.startsWith("APP_") || k.startsWith("AUTO_RESTART"),
-      Emulator: (k) => k === "EMULATOR" || k.startsWith("MUMU") || k.startsWith("LDPLAYER") || k.startsWith("ADB_"),
+    
+    const boolKeys = [
+      "AUTOCONTROL_ENABLED", "AUTOCONTROL_AUTO_UPDATE_ENABLED",
+      "DISCORD_ENABLED", "LIVE_LOG_ENABLED", "COC_VISUAL_CHECK_ENABLED",
+      "DAILY_SUMMARY_ENABLED", "NTFY_ENABLED", "TRUST_PROXY"
+    ];
+
+    const labels = {
+      WEB_PORT: { title: "Web Server Port", desc: "Default is 8477. Restart required after port change." },
+      TRUST_PROXY: { title: "Trust Cloudflare / Reverse Proxy", desc: "Extract real client IP from CF-Connecting-IP & X-Forwarded-For headers to prevent lockout." },
+      AUTO_RESTART_MODE: { title: "Auto-Restart Behavior", desc: "Set to 'auto' for automatic restart on freeze/crash, or 'off'." },
+      COC_VISUAL_CHECK_ENABLED: { title: "Visual OCR / Crash Detection", desc: "Detects game disconnects, out of gold, and crash screens automatically." },
+      COC_VISUAL_CHECK_INTERVAL_SECONDS: { title: "Visual Check Interval (seconds)", desc: "Seconds between background screen checks (min 15s)." },
+      STALLED_AFTER_SECONDS: { title: "Stalled Threshold (seconds)", desc: "Seconds without log progress before triggering stall alert." },
+      AUTOCONTROL_ADB_PATH: { title: "ADB Executable Path", desc: "Path to adb.exe (leave blank to use AutoClash internal Tools/adb/adb.exe)." },
+      AUTOCONTROL_BUTTON_BOTTOM_OFFSET: { title: "Button Bottom Offset", desc: "Pixel offset for AutoClash Pro Start/Pause button clicking (default 24)." },
+      DISCORD_ENABLED: { title: "Discord Bot Integration", desc: "Connect to Discord Gateway to post live stats and status embeds." },
+      DISCORD_TOKEN: { title: "Discord Bot Token", desc: "Bot application secret token from Discord Developer Portal." },
+      DISCORD_CHANNEL_ID: { title: "Default Discord Channel ID", desc: "Channel ID for general status updates and daily summaries." },
+      AUTOCONTROL_CHANNEL_ID: { title: "Control Panel Channel ID", desc: "Specific channel ID where interactive control embeds are pinned." },
+      DISCORD_OWNER_ID: { title: "Authorized Discord User IDs", desc: "Comma-separated Discord User IDs allowed to execute bot controls." },
+      LIVE_LOG_ENABLED: { title: "Live Discord Log Threads", desc: "Streams live log lines into a temporary thread in Discord." },
+      NTFY_ENABLED: { title: "Phone Push Alerts (ntfy.sh)", desc: "Send urgent notifications directly to your phone." },
+      NTFY_TOPIC: { title: "ntfy.sh Topic Name", desc: "Private topic name subscribed in your phone's ntfy app." },
     };
-    const keys = Object.keys(env).sort();
-    const used = new Set();
+
+    const sections = [
+      {
+        title: "⚡ AutoClash & Automation",
+        keys: ["AUTO_RESTART_MODE", "COC_VISUAL_CHECK_ENABLED", "COC_VISUAL_CHECK_INTERVAL_SECONDS", "STALLED_AFTER_SECONDS", "AUTOCONTROL_ADB_PATH", "AUTOCONTROL_BUTTON_BOTTOM_OFFSET"]
+      },
+      {
+        title: "🤖 Discord Integration",
+        keys: ["DISCORD_ENABLED", "DISCORD_TOKEN", "DISCORD_CHANNEL_ID", "AUTOCONTROL_CHANNEL_ID", "DISCORD_OWNER_ID", "LIVE_LOG_ENABLED"]
+      },
+      {
+        title: "🌐 Network & Remote Access",
+        keys: ["WEB_PORT", "TRUST_PROXY", "NTFY_ENABLED", "NTFY_TOPIC"]
+      }
+    ];
+
+    const renderedKeys = new Set();
     let html = "";
-    for (const [title, match] of Object.entries(groups)) {
-      const group = keys.filter((k) => !used.has(k) && match(k));
-      group.forEach((k) => used.add(k));
-      if (group.length) html += `<div class="setting-group"><h3>${title}</h3></div>` + group.map((k) => fieldHtml(k, env[k])).join("");
+
+    for (const sec of sections) {
+      let secHtml = `<div class="setting-group" style="margin-top:14px"><h3 style="font-size:15px;margin-bottom:8px;color:var(--accent)">${sec.title}</h3></div>`;
+      for (const k of sec.keys) {
+        renderedKeys.add(k);
+        const val = env[k] !== undefined ? env[k] : "";
+        const meta = labels[k] || { title: k, desc: "" };
+
+        if (boolKeys.includes(k)) {
+          const isChecked = String(val).toLowerCase() === "true" || String(val) === "1";
+          secHtml += `
+            <div class="switch-row">
+              <div class="label-col">
+                <b>${esc(meta.title)}</b>
+                <div class="desc">${esc(meta.desc)}</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" name="${k}" ${isChecked ? "checked" : ""}>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          `;
+        } else if (SECRET_KEYS.includes(k)) {
+          secHtml += `
+            <label class="field" style="margin-top:10px">${esc(meta.title)}
+              <div class="desc sub tiny" style="margin-bottom:4px">${esc(meta.desc)}</div>
+              <div class="input-with-action">
+                <input type="password" name="${k}" value="" placeholder="●●●●●●●● (kept if unchanged)" autocomplete="off">
+                <button type="button" class="input-action-btn" data-togglepass="${k}" title="Show/Hide">👁️</button>
+              </div>
+            </label>
+          `;
+        } else {
+          secHtml += `
+            <label class="field" style="margin-top:10px">${esc(meta.title)}
+              <div class="desc sub tiny" style="margin-bottom:4px">${esc(meta.desc)}</div>
+              <input type="text" name="${k}" value="${String(val).replace(/"/g, "&quot;")}" autocomplete="off" spellcheck="false">
+            </label>
+          `;
+        }
+      }
+      html += secHtml;
     }
-    const rest = keys.filter((k) => !used.has(k));
-    if (rest.length) html += `<div class="setting-group"><h3>Other</h3></div>` + rest.map((k) => fieldHtml(k, env[k])).join("");
+
+    const restKeys = Object.keys(env).filter((k) => !renderedKeys.has(k) && !k.startsWith("WEB_PASSWORD") && k !== "LOG_FILES" && k !== "AUTOCONTROL_INSTANCES").sort();
+    if (restKeys.length) {
+      html += `<details style="margin-top:16px"><summary style="cursor:pointer;font-weight:600;color:var(--muted);padding:8px 0">Advanced / Additional Parameters (${restKeys.length})</summary><div style="margin-top:10px">`;
+      for (const k of restKeys) {
+        html += `<label class="field" style="margin-top:8px">${k}<input type="text" name="${k}" value="${String(env[k]).replace(/"/g, "&quot;")}" autocomplete="off"></label>`;
+      }
+      html += `</div></details>`;
+    }
+
     $("#settingsForm").innerHTML = html;
+
+    $$("#settingsForm [data-togglepass]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const input = btn.previousElementSibling;
+        if (input) input.type = input.type === "password" ? "text" : "password";
+      });
+    });
+
   } catch (error) {
     if (error.message !== "Signed out.") toast(error.message, true);
   }
 }
 
-function fieldHtml(key, value) {
-  const secret = SECRET_KEYS.includes(key);
-  return `<label class="field">${key}
-    <input type="${secret ? "password" : "text"}" name="${key}" value="${secret ? "" : String(value).replace(/"/g, "&quot;")}"
-      placeholder="${secret ? "unchanged" : ""}" autocomplete="off" spellcheck="false"></label>`;
-}
+$("#reloadSettings")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  loadSettings();
+  toast("Settings reloaded.");
+});
 
-$("#reloadSettings").addEventListener("click", (event) => { event.preventDefault(); loadSettings(); });
-
-$("#saveSettings").addEventListener("click", async (event) => {
+$("#saveSettings")?.addEventListener("click", async (event) => {
   event.preventDefault();
   const env = {};
   for (const input of $$("#settingsForm input")) {
-    if (SECRET_KEYS.includes(input.name) && !input.value) continue;
-    env[input.name] = input.value;
+    if (input.type === "checkbox") {
+      env[input.name] = input.checked ? "true" : "false";
+    } else if (SECRET_KEYS.includes(input.name)) {
+      if (input.value) env[input.name] = input.value;
+    } else {
+      env[input.name] = input.value;
+    }
   }
   try {
     await post("/api/config", { env });
-    toast("Saved. Restart the monitor to apply.");
+    toast("Settings saved! Restart monitor to apply changes.");
   } catch (error) {
     toast(error.message, true);
+  }
+});
+
+$("#restartMonitorBtn")?.addEventListener("click", async (event) => {
+  event.preventDefault();
+  if (!confirm("Restart XOR WebMonitor? AutoClash will continue running.")) return;
+  await post("/api/restart").catch(() => {});
+  toast("Restarting monitor. Reconnecting shortly...");
+});
+
+$("#changePasswordForm")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const currentPassword = $("#currPassInput").value;
+  const newPassword = $("#newPassInput").value;
+  const confirmPassword = $("#confirmPassInput").value;
+  const msgEl = $("#passChangeMsg");
+
+  if (newPassword.length < 8) {
+    msgEl.textContent = "New password must be at least 8 characters.";
+    msgEl.style.color = "var(--bad)";
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    msgEl.textContent = "New passwords do not match.";
+    msgEl.style.color = "var(--bad)";
+    return;
+  }
+
+  $("#submitPassChange").disabled = true;
+  msgEl.textContent = "Updating...";
+  msgEl.style.color = "var(--muted)";
+
+  try {
+    const res = await post("/api/config/change-password", { currentPassword, newPassword });
+    msgEl.textContent = res.output || "Password updated!";
+    msgEl.style.color = "var(--ok)";
+    $("#currPassInput").value = "";
+    $("#newPassInput").value = "";
+    $("#confirmPassInput").value = "";
+    toast("Password updated successfully.");
+  } catch (err) {
+    msgEl.textContent = err.message;
+    msgEl.style.color = "var(--bad)";
+    toast(err.message, true);
+  } finally {
+    $("#submitPassChange").disabled = false;
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (event.target && event.target.id === "rerunSetupBtn") {
+    showSetup();
   }
 });
 
@@ -1907,22 +2242,66 @@ if ("serviceWorker" in navigator) {
 }
 
 function showSetup() {
-  $("#setup").classList.add("show");
-  $("#login").classList.remove("show");
-  $("#app").classList.remove("show");
-  setupBoot();
+  $("#setup")?.classList.add("show");
+  $("#login")?.classList.remove("show");
+  $("#app")?.classList.remove("show");
+  if (typeof renderSetup === "function") {
+    renderSetup();
+  }
+  if (typeof setupBoot === "function") {
+    setupBoot();
+  } else if (typeof window.setupBoot === "function") {
+    window.setupBoot();
+  }
 }
 
-api("/api/session")
-  .then((result) => {
-    if (result.setupNeeded) return showSetup();
-    return result.authenticated ? showApp() : showLogin();
-  })
-  .catch(() => showLogin());
+async function bootApp() {
+  try {
+    const result = await api("/api/session");
+    if (result && result.setupNeeded) {
+      showSetup();
+    } else if (result && result.authenticated) {
+      await showApp();
+    } else {
+      showLogin();
+    }
+  } catch (err) {
+    console.warn("bootApp error, showing login:", err.message);
+    showLogin();
+  }
+}
 
-setInterval(() => { if ($("#app").classList.contains("show")) refresh(); }, 15000);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootApp);
+} else {
+  bootApp();
+}
+
+function tickLiveTimers() {
+  const now = Date.now();
+  document.querySelectorAll(".mv-timer[data-due]").forEach((el) => {
+    const due = Number(el.dataset.due || 0);
+    if (due > 0) {
+      const leftMs = Math.max(0, due - now);
+      const min = Math.floor(leftMs / 60000);
+      const sec = Math.floor((leftMs % 60000) / 1000);
+      el.textContent = leftMs > 0 ? `⏳ ${min}:${String(sec).padStart(2, "0")} left` : "⏳ switching soon";
+    }
+  });
+
+  document.querySelectorAll(".break-timer[data-until]").forEach((el) => {
+    const until = Number(el.dataset.until || 0);
+    if (until > 0) {
+      const leftSec = Math.max(0, Math.round((until - now) / 1000));
+      const min = Math.floor(leftSec / 60);
+      const sec = leftSec % 60;
+      el.textContent = leftSec > 0 ? `(${min}:${String(sec).padStart(2, "0")} left)` : "(break ending...)";
+    }
+  });
+}
+
+setInterval(tickLiveTimers, 1000);
+setInterval(() => { if ($("#app")?.classList.contains("show")) refresh(); }, 15000);
 </script>
-<script src="/setup.js"></script>
-<script src="/guide.js"></script>
 </body>
 </html>

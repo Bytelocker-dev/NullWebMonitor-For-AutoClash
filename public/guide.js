@@ -111,10 +111,53 @@ const GUIDE_SECTIONS = [
 <p class="sub tiny">Nothing is cached offline by design: this panel shows live bot state, and a stale cached copy would be worse than useless.</p>`,
   },
   {
+    title: "Terminal CLI commands & Password reset",
+    body: `
+<p class="sub">XOR WebMonitor runs with an interactive command prompt in your terminal (PowerShell / Command Prompt). Type commands directly into the running terminal window:</p>
+<ul class="guide-list">
+  <li><code>help</code> — Displays all available console commands.</li>
+  <li><code>reset-password [newpass]</code> — Reset the web panel admin password immediately.</li>
+  <li><code>status</code> — Print real-time status of all monitored AutoClash instances.</li>
+  <li><code>stats</code> — Print latest farming loot gained and attack counts.</li>
+  <li><code>instances</code> — List configured instances and ADB ports.</li>
+  <li><code>restart</code> — Safely restart the monitor process.</li>
+  <li><code>clear</code> — Clear the terminal screen and redraw the ASCII banner.</li>
+  <li><code>exit</code> — Stop XOR WebMonitor.</li>
+</ul>
+<h4>Emergency password reset via CLI</h4>
+<p class="sub">If you ever get locked out of the web panel, you can reset your password from the terminal without starting the full monitor:</p>
+<ol class="guide-list">
+  <li>Open PowerShell or Command Prompt in the repository folder.</li>
+  <li>Run: <code>npm run reset-password</code> (or <code>node bot.js --reset-password</code>).</li>
+  <li>Enter your new password (minimum 8 characters). It will be hashed with scrypt and saved to <code>.env</code> automatically.</li>
+</ol>`,
+  },
+  {
+    title: "Same-folder multiple instances",
+    body: `
+<p class="sub">XOR WebMonitor 2.0 natively supports running multiple AutoClash windows out of the same installation folder:</p>
+<ul class="guide-list">
+  <li>During Setup, the detector identifies each open window by its window title, PID, ADB port and logged-in account name.</li>
+  <li>Unique instance IDs (e.g. <code>AutoClash (16416)</code>) are automatically generated.</li>
+  <li>Stats and session logs are parsed per instance without overwriting each other.</li>
+</ul>`,
+  },
+  {
+    title: "Cloudflare Tunnel & Reverse Proxy",
+    body: `
+<p class="sub">You can securely expose XOR WebMonitor over Cloudflare Tunnels (Zero Trust) or reverse proxies (Nginx / Caddy):</p>
+<ol class="guide-list">
+  <li>Set <b>Trust Cloudflare / Reverse Proxy</b> (<code>TRUST_PROXY=true</code>) in Settings.</li>
+  <li>Point your Cloudflare Tunnel to <code>http://localhost:8477</code>.</li>
+  <li>This ensures the monitor reads real client IPs from <code>CF-Connecting-IP</code> and <code>X-Forwarded-For</code> headers, preventing false rate limiter lockouts.</li>
+</ol>`,
+  },
+  {
     title: "Security",
     body: `
 <ul class="guide-list">
   <li>Your password is stored only as a scrypt hash. Plaintext is removed from <code>.env</code> on first start.</li>
+  <li>Special characters (including <code>#</code>, <code>=</code>, <code>"</code>, <code>$</code>, spaces, emojis, and Unicode) are fully supported in passwords.</li>
   <li>Session cookies are HttpOnly and SameSite=Strict, and only a SHA-256 hash of each token is written to disk, so the session file cannot be replayed.</li>
   <li>Five failed logins from one address triggers a five-minute lockout.</li>
   <li>Config writes are re-checked on the server against the process being stopped, so a stale browser tab cannot push changes into a running bot.</li>

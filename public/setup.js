@@ -20,16 +20,19 @@ let wiz = {
 };
 
 async function setupBoot() {
+  renderSetup();
   try {
     wiz.state = await api("/api/setup/state");
     wiz.access.port = wiz.state.port || 8477;
     // Skip the password step if one already exists (re-running setup later).
-    if (!wiz.state.needsPassword && wiz.step === 0) wiz.step = 1;
+    if (wiz.state && !wiz.state.needsPassword && wiz.step === 0) wiz.step = 1;
     renderSetup();
   } catch (error) {
-    $("#setupBody").innerHTML = '<div class="card sub">' + esc(error.message) + "</div>";
+    console.warn("Could not fetch setup state:", error.message);
   }
 }
+window.setupBoot = setupBoot;
+window.renderSetup = renderSetup;
 
 function setupShell(inner, opts = {}) {
   const dots = SETUP_STEPS.map((name, i) =>
@@ -37,7 +40,8 @@ function setupShell(inner, opts = {}) {
   ).join("");
 
   return '<div class="card wiz">'
-    + '<h2>Set up NullWebMonitor</h2>'
+    + '<div style="text-align:center;margin-bottom:12px"><img src="/logo.png" alt="XOR" style="width:48px;height:48px;border-radius:10px"></div>'
+    + '<h2 style="text-align:center">Set up XOR WebMonitor</h2>'
     + '<div class="wiz-steps">' + dots + "</div>"
     + '<div class="wiz-body">' + inner + "</div>"
     + '<div class="btn-row" style="margin-top:18px">'
@@ -106,7 +110,7 @@ function stepAccess() {
       + "<b>One firewall rule is needed.</b> Your Tailscale adapter is on the "
       + esc(a.tailscaleProfile || "Private") + " profile, and Windows blocks inbound connections there by default. "
       + "Run this once in an <b>Administrator</b> PowerShell:"
-      + '<pre class="log" style="height:auto;margin-top:8px">New-NetFirewallRule -DisplayName "NullWebMonitor" -Direction Inbound -Action Allow -Protocol TCP -LocalPort '
+      + '<pre class="log" style="height:auto;margin-top:8px">New-NetFirewallRule -DisplayName "XOR WebMonitor" -Direction Inbound -Action Allow -Protocol TCP -LocalPort '
       + port + " -Profile " + esc(a.tailscaleProfile || "Private") + " -RemoteAddress 100.64.0.0/10</pre>"
       + '<div class="sub tiny" style="margin-top:6px">This panel will not run it for you — changing firewall rules is yours to approve.</div>'
       + "</div>";
@@ -124,6 +128,7 @@ function stepAccess() {
 
   return "<p class=\"sub\">How you will reach the panel from your phone.</p>"
     + ts + lan + fw
+    + '<div style="margin-top:10px"><button class="btn sm" id="wizRefreshAccess"' + (wiz.busy ? " disabled" : "") + '>Re-check network &amp; Tailscale</button></div>'
     + '<label class="field" style="margin-top:14px">Bind to'
     + '<select id="wizHost">'
     + '<option value="0.0.0.0"' + (wiz.access.host === "0.0.0.0" ? " selected" : "") + ">All interfaces — Tailscale and home network</option>"
@@ -174,7 +179,7 @@ function stepOptional() {
     + '<div class="sub tiny" style="margin-top:4px">Anyone else who can see the channel can otherwise press the control buttons, '
     + 'including the full-desktop screenshot. Comma-separate more than one ID. Leave blank to allow anyone (not recommended).</div>'
     + '<label class="field" style="margin-top:8px">Control panel channel name'
-    + '<input type="text" id="wizDChanName" placeholder="NullWebMonitor Panel"></label>'
+    + '<input type="text" id="wizDChanName" placeholder="XOR WebMonitor Panel"></label>'
     + '<div class="sub tiny" style="margin-top:4px">The bot renames that channel to this once, on start.</div>'
     + '<div class="btn-row" style="margin-top:10px"><button class="btn sm" id="wizDTest">Send test message</button>'
     + '<span class="sub tiny" id="wizDResult" style="align-self:center"></span></div>'
@@ -200,38 +205,67 @@ document.addEventListener("click", async (event) => {
   if (b.dataset.wizdel !== undefined) { wiz.instances.splice(Number(b.dataset.wizdel), 1); return renderSetup(); }
 
   if (b.id === "wizDetect") {
-    wiz.busy = true; renderSetup();
+    wiz.busy = true;
+    b.disabled = true;
     try {
       const found = await post("/api/setup/detect");
       wiz.detected = found.instances || [];
-      // Only pre-fill rows the user has not started filling in.
-      if (!wiz.instances.some((i) => i.name || i.folder)) {
+      if (wiz.detected.length) {
         wiz.instances = wiz.detected.map((d) => ({
-          name: d.suggestedName, folder: d.folder, device: d.device, logsDir: d.logsDir || "",
+          name: d.suggestedName,
+          folder: d.folder,
+          device: d.device || "",
+          logsDir: d.logsDir || "",
         }));
         if (wiz.detected[0]) {
           wiz.emulator = wiz.detected[0].emulator || "";
           wiz.adbPath = wiz.detected[0].adbPath || "";
         }
+      } else {
+        toast("No running AutoClash instances detected. You can add them manually.");
       }
-    } catch (error) { toast(error.message, true); }
-    wiz.busy = false; return renderSetup();
+    } catch (error) {
+      toast(error.message, true);
+    }
+    wiz.busy = false;
+    return renderSetup();
   }
 
   if (b.id === "wizNtfyGen") {
     const rnd = crypto.getRandomValues(new Uint8Array(9));
-    $("#wizNtfy").value = "nwm-" + [...rnd].map((n) => n.toString(16).padStart(2, "0")).join("");
+    const input = $("#wizNtfy");
+    if (input) input.value = "nwm-" + [...rnd].map((n) => n.toString(16).padStart(2, "0")).join("");
     return;
   }
 
   if (b.id === "wizDTest") {
     const out = $("#wizDResult");
-    out.textContent = "Sending...";
+    if (out) {
+      out.textContent = "Sending...";
+      out.style.color = "var(--dim)";
+    }
     try {
-      const r = await post("/api/setup/discord-test", { token: $("#wizDToken").value, channelId: $("#wizDChan").value });
-      out.style.color = "#6fdc93"; out.textContent = r.output;
-    } catch (error) { out.style.color = "#ff8a85"; out.textContent = error.message; }
+      const r = await post("/api/setup/discord-test", {
+        token: ($("#wizDToken") || {}).value || "",
+        channelId: ($("#wizDChan") || {}).value || "",
+      });
+      if (out) { out.style.color = "#6fdc93"; out.textContent = r.output; }
+    } catch (error) {
+      if (out) { out.style.color = "#ff8a85"; out.textContent = error.message; }
+    }
     return;
+  }
+
+  if (b.id === "wizRefreshAccess") {
+    wiz.busy = true;
+    b.disabled = true;
+    try {
+      wiz.state = await api("/api/setup/state");
+    } catch (e) {
+      toast(e.message, true);
+    }
+    wiz.busy = false;
+    return renderSetup();
   }
 
   if (b.id === "wizNext") return wizardNext();
@@ -239,7 +273,7 @@ document.addEventListener("click", async (event) => {
 
 document.addEventListener("input", (event) => {
   const el = event.target;
-  if (el.dataset && el.dataset.wiz !== undefined) {
+  if (el.dataset && el.dataset.wiz !== undefined && wiz.instances[Number(el.dataset.i)]) {
     wiz.instances[Number(el.dataset.i)][el.dataset.wiz] = el.value;
   }
 });
@@ -247,38 +281,91 @@ document.addEventListener("input", (event) => {
 async function wizardNext() {
   // Password
   if (wiz.step === 0) {
-    const p1 = $("#wizPass").value, p2 = $("#wizPass2").value;
+    const p1 = ($("#wizPass") || {}).value || "";
+    const p2 = ($("#wizPass2") || {}).value || "";
     const err = $("#wizPassErr");
-    if (p1.length < 8) return void (err.textContent = "Use at least 8 characters.");
-    if (p1 !== p2) return void (err.textContent = "The two passwords do not match.");
-    wiz.busy = true; renderSetup();
+    if (p1.length < 8) {
+      if (err) err.textContent = "Use at least 8 characters.";
+      else toast("Use at least 8 characters.", true);
+      return;
+    }
+    if (p1 !== p2) {
+      if (err) err.textContent = "The two passwords do not match.";
+      else toast("The two passwords do not match.", true);
+      return;
+    }
+    const btn = $("#wizNext");
+    if (btn) btn.disabled = true;
+    wiz.busy = true;
     try {
       await post("/api/setup/password", { password: p1 });
       wiz.step = 1;
-    } catch (error) { toast(error.message, true); }
-    wiz.busy = false; return renderSetup();
+      wiz.busy = false;
+      renderSetup();
+    } catch (error) {
+      wiz.busy = false;
+      if (btn) btn.disabled = false;
+      if (err) err.textContent = error.message;
+      else toast(error.message, true);
+    }
+    return;
   }
 
   // Instances
   if (wiz.step === 1) {
+    $$("#setupBody [data-wiz='name']").forEach((el) => {
+      const i = Number(el.dataset.i);
+      if (wiz.instances[i]) wiz.instances[i].name = el.value.trim();
+    });
+    $$("#setupBody [data-wiz='folder']").forEach((el) => {
+      const i = Number(el.dataset.i);
+      if (wiz.instances[i]) wiz.instances[i].folder = el.value.trim();
+    });
+    $$("#setupBody [data-wiz='device']").forEach((el) => {
+      const i = Number(el.dataset.i);
+      if (wiz.instances[i]) wiz.instances[i].device = el.value.trim();
+    });
+    $$("#setupBody [data-wiz='logsDir']").forEach((el) => {
+      const i = Number(el.dataset.i);
+      if (wiz.instances[i]) wiz.instances[i].logsDir = el.value.trim();
+    });
+
     const err = $("#wizInstErr");
-    if (!wiz.instances.length) return void (err.textContent = "Add at least one instance.");
-    const bad = wiz.instances.find((i) => !i.name.trim() || !i.folder.trim());
-    if (bad) return void (err.textContent = "Every instance needs a name and a folder.");
-    wiz.step = 2; return renderSetup();
+    if (!wiz.instances.length) {
+      if (err) err.textContent = "Add at least one instance.";
+      else toast("Add at least one instance.", true);
+      return;
+    }
+    const bad = wiz.instances.find((i) => !i.name || !i.folder);
+    if (bad) {
+      if (err) err.textContent = "Every instance needs a name and a folder.";
+      else toast("Every instance needs a name and a folder.", true);
+      return;
+    }
+    wiz.step = 2;
+    renderSetup();
+    api("/api/setup/state").then((s) => { wiz.state = s; renderSetup(); }).catch(() => {});
+    return;
   }
 
   // Access
   if (wiz.step === 2) {
-    wiz.access.host = $("#wizHost").value;
-    wiz.access.port = Number($("#wizPort").value) || 8477;
-    wiz.step = 3; return renderSetup();
+    wiz.access.host = ($("#wizHost") || {}).value || "0.0.0.0";
+    wiz.access.port = Number(($("#wizPort") || {}).value) || 8477;
+    wiz.step = 3;
+    return renderSetup();
   }
 
   // Finish.
-  //
-  // Read the optional fields BEFORE re-rendering: renderSetup() rebuilds the
-  // DOM, so reading them afterwards silently drops whatever was typed.
+  $$("#setupBody [data-wiz='channelId']").forEach((el) => {
+    const i = Number(el.dataset.i);
+    if (wiz.instances[i]) wiz.instances[i].channelId = el.value.trim();
+  });
+  $$("#setupBody [data-wiz='channelName']").forEach((el) => {
+    const i = Number(el.dataset.i);
+    if (wiz.instances[i]) wiz.instances[i].channelName = el.value.trim();
+  });
+
   const payload = {
     instances: wiz.instances,
     emulator: wiz.emulator,
@@ -293,16 +380,19 @@ async function wizardNext() {
     ntfy: { topic: ($("#wizNtfy") || {}).value || "" },
   };
 
-  wiz.busy = true; renderSetup();
+  const btn = $("#wizNext");
+  if (btn) btn.disabled = true;
+  wiz.busy = true;
   try {
-    await post("/api/setup/save", payload);
-    $("#setupBody").innerHTML = '<div class="card wiz"><h2>Setup complete</h2>'
-      + '<p class="sub">Restart the monitor to start watching. Close the console window and run '
-      + "<code>npm start</code> again, then sign in with the password you just set.</p>"
-      + '<p class="sub tiny">The Guide tab has step-by-step instructions for Discord, Tailscale and everything else.</p></div>';
+    const res = await post("/api/setup/save", payload);
+    toast("Setup complete! Welcome to XOR WebMonitor.");
+    $("#setup").classList.remove("show");
+    await showApp();
   } catch (error) {
-    wiz.busy = false; renderSetup();
+    wiz.busy = false;
+    if (btn) btn.disabled = false;
     const err = $("#wizSaveErr");
-    if (err) err.textContent = error.message; else toast(error.message, true);
+    if (err) err.textContent = error.message;
+    else toast(error.message, true);
   }
 }

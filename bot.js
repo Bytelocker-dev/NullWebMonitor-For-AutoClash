@@ -11,6 +11,14 @@ const restartLogsByKey = new Map();
 let autoClashUpdateOperation = null;
 let autoClashUpdateBlockedBy = null;
 
+function resolveScriptPath(scriptName) {
+  const inDir = path.join(__dirname, scriptName);
+  if (fs.existsSync(inDir)) return inDir;
+  const inCwd = path.join(process.cwd(), scriptName);
+  if (fs.existsSync(inCwd)) return inCwd;
+  return inDir;
+}
+
 // Web control panel. webEmit stays a no-op until the panel starts, so the bot
 // runs unchanged when WEB_ENABLED is off.
 const { startWebServer } = require("./web-server");
@@ -195,8 +203,17 @@ function parseDiscordJson(text) {
   return text ? JSON.parse(text) : null;
 }
 
+function resolveEnvPath() {
+  if (process.env.ENV_FILE_OVERRIDE) return process.env.ENV_FILE_OVERRIDE;
+  const inCwd = path.join(process.cwd(), ".env");
+  if (fs.existsSync(inCwd)) return inCwd;
+  const inDir = typeof __dirname !== "undefined" ? path.join(__dirname, ".env") : inCwd;
+  if (fs.existsSync(inDir)) return inDir;
+  return inCwd;
+}
+
 function loadEnv() {
-  const envPath = path.join(process.cwd(), ".env");
+  const envPath = resolveEnvPath();
   if (!fs.existsSync(envPath)) return;
 
   const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
@@ -208,16 +225,20 @@ function loadEnv() {
     if (equalsIndex === -1) continue;
 
     const key = trimmed.slice(0, equalsIndex).trim();
-    const value = trimmed.slice(equalsIndex + 1).trim().replace(/^"|"$/g, "");
-    if (key && process.env[key] === undefined) {
-      process.env[key] = value;
+    const rawVal = trimmed.slice(equalsIndex + 1).trim();
+    let val = rawVal;
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/\\\\/g, "\\");
+    }
+    if (key) {
+      process.env[key] = val;
     }
   }
 }
 
 // Reads .env as a plain key/value map, for the web settings page.
 function readEnvFile() {
-  const envPath = path.join(process.cwd(), ".env");
+  const envPath = resolveEnvPath();
   if (!fs.existsSync(envPath)) return {};
 
   const values = {};
@@ -226,7 +247,13 @@ function readEnvFile() {
     if (!trimmed || trimmed.startsWith("#")) continue;
     const equalsIndex = trimmed.indexOf("=");
     if (equalsIndex === -1) continue;
-    values[trimmed.slice(0, equalsIndex).trim()] = trimmed.slice(equalsIndex + 1).trim().replace(/^"|"$/g, "");
+    const key = trimmed.slice(0, equalsIndex).trim();
+    const rawVal = trimmed.slice(equalsIndex + 1).trim();
+    let val = rawVal;
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/\\\\/g, "\\");
+    }
+    values[key] = val;
   }
   return values;
 }
@@ -235,7 +262,7 @@ function readEnvFile() {
 // are never overwritten with an empty value, so a blanked-out field in the UI
 // cannot wipe the Discord token or the password hash.
 function writeEnvFile(updates) {
-  const envPath = path.join(process.cwd(), ".env");
+  const envPath = resolveEnvPath();
   const merged = readEnvFile();
 
   for (const [key, rawValue] of Object.entries(updates || {})) {
@@ -246,7 +273,13 @@ function writeEnvFile(updates) {
   }
 
   const body = Object.entries(merged)
-    .map(([key, value]) => `${key}=${value}`)
+    .map(([key, value]) => {
+      const str = String(value ?? "");
+      const formatted = (/[\s#"']/.test(str) || str.includes("=") || str.includes("\n"))
+        ? `"${str.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+        : str;
+      return `${key}=${formatted}`;
+    })
     .join("\r\n");
   fs.writeFileSync(envPath, `${body}\r\n`, "utf8");
 }
@@ -260,7 +293,7 @@ function requiredEnv(name) {
 }
 
 function parseLogFiles(rawValue) {
-  const logs = [];
+  const rawLogs = [];
 
   rawValue.split(";").forEach((item, index) => {
     const trimmed = item.trim();
@@ -270,13 +303,23 @@ function parseLogFiles(rawValue) {
     if (equalsIndex >= 0) {
       const name = trimmed.slice(0, equalsIndex).trim() || `log-${index + 1}`;
       const logPath = trimmed.slice(equalsIndex + 1).trim().replace(/^"|"$/g, "");
-      logs.push({ name, path: logPath });
+      rawLogs.push({ name, path: logPath });
       return;
     }
 
     const logPath = trimmed.replace(/^"|"$/g, "");
-    logs.push({ name: path.basename(logPath, path.extname(logPath)) || `log-${index + 1}`, path: logPath });
+    rawLogs.push({ name: path.basename(logPath, path.extname(logPath)) || `log-${index + 1}`, path: logPath });
   });
+
+  const seenPaths = new Set();
+  const logs = [];
+  for (const item of rawLogs) {
+    const norm = path.resolve(item.path).toLowerCase();
+    if (!seenPaths.has(norm)) {
+      seenPaths.add(norm);
+      logs.push(item);
+    }
+  }
 
   if (logs.length === 0) {
     throw new Error("LOG_FILES does not have any configured log files");
@@ -633,6 +676,10 @@ const RENAME_MIN_INTERVAL_MS = 10 * 60 * 1000;
 const channelRenameHistory = new Map(); // channelId -> { lastAt, applied }
 
 async function updateChannelName(log, config) {
+  // Never rename the shared control panel channel to an instance's name
+  const controlId = (config && (config.controlChannelId || config.channelId)) || (typeof control !== "undefined" ? control?.channelId : null);
+  if (controlId && log.channelId === controlId) return;
+
   const emoji =
     log.status === "stalled"
       ? "\u{1F534}"
@@ -753,7 +800,12 @@ function analyzeLogLines(lines) {
 // stated duration the log would look stalled a few minutes in.
 function parseBreakMinutes(lines) {
   for (const line of lines) {
-    const match = String(line).match(/humanized break started:\s*(\d+)\s*minute/i);
+    const s = String(line);
+    let match = s.match(/(?:humanized\s+)?break\s*(?:started|start|scheduled)?\s*[:\-]?\s*(\d+)\s*min/i);
+    if (match) return Number(match[1]);
+    match = s.match(/taking\s+(?:a\s+)?(?:humanized\s+)?break\s+(?:for\s+)?(\d+)\s*min/i);
+    if (match) return Number(match[1]);
+    match = s.match(/\[BREAK\]\s*(\d+)\s*min/i);
     if (match) return Number(match[1]);
   }
   return null;
@@ -820,14 +872,22 @@ function scanLogTailForBreak(logFilePath, now = new Date()) {
   return { startedAt: startedAt.getTime(), endsAt: endsAt.getTime(), minutes };
 }
 
-// "03:21:54 | ..." -> a Date today. If that lands in the future the line must
+// "03:21:54 PM | ..." or "01:13:12 AM" -> a Date today. If that lands in the future the line must
 // belong to yesterday, so step back a day.
 function lineClockToDate(line, now = new Date()) {
-  const match = String(line).match(/(\d{1,2}):(\d{2}):(\d{2})/);
+  const match = String(line).match(/(\d{1,2}):(\d{2}):(\d{2})(?:\s*(AM|PM))?/i);
   if (!match) return null;
 
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  const meridiem = match[4] ? match[4].toUpperCase() : null;
+
+  if (meridiem === "PM" && hours < 12) hours += 12;
+  if (meridiem === "AM" && hours === 12) hours = 0;
+
   const date = new Date(now);
-  date.setHours(Number(match[1]), Number(match[2]), Number(match[3]), 0);
+  date.setHours(hours, minutes, seconds, 0);
   if (date.getTime() > now.getTime() + 60 * 1000) date.setDate(date.getDate() - 1);
   return date;
 }
@@ -1303,19 +1363,20 @@ async function detectCocConnectionLost(control, instance) {
   const dir = SCREENSHOT_DIR;
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${instance.id}-connection-lost-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
+  const scriptPath = resolveScriptPath("detect-coc-connection-lost.ps1");
   const output = await execFileText("powershell", [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    path.join(process.cwd(), "detect-coc-connection-lost.ps1"),
+    scriptPath,
     "-AdbPath",
     control.adbPath,
     "-Device",
     instance.device,
     "-OutputPath",
     file,
-  ], { cwd: process.cwd(), timeout: 20000 });
+  ], { cwd: path.dirname(scriptPath), timeout: 20000 });
 
   return {
     detected: /detected=True/i.test(output),
@@ -1430,16 +1491,17 @@ async function closeLdPlayer(control, instance) {
 }
 
 async function closeLdPlayerByWindow(instance) {
+  const scriptPath = resolveScriptPath("close-ldplayer-instance.ps1");
   const args = [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    path.join(process.cwd(), "close-ldplayer-instance.ps1"),
+    scriptPath,
     "-Label",
     instance.label,
   ];
-  return execFileText("powershell", args, { cwd: process.cwd() });
+  return execFileText("powershell", args, { cwd: path.dirname(scriptPath) });
 }
 
 // Emulator backend. MuMu and LDPlayer are both driven by an instance index
@@ -1648,29 +1710,49 @@ function buildStatusEmbed(log, config) {
   const emoji = isStalled ? "🔴" : isBreak ? "🟠" : isPaused ? "🟡" : isFinished ? "⚪" : "🟢";
   const color = isStalled ? 0xff3b30 : isBreak ? 0xff8c1a : isPaused ? 0xf1c40f : isFinished ? 0x95a5a6 : 0x2ecc71;
 
+  const instance = findControlInstanceForLog(log, config);
+  const run = instance ? instanceRunStateCached(instance) : null;
+
+  const fields = [
+    {
+      name: "Status",
+      value: statusText,
+      inline: true,
+    },
+    {
+      name: "Last activity",
+      value: `${discordRelativeTime(log.lastActivity)}${secondsWithoutActivity >= 60 ? "" : ` (${secondsWithoutActivity}s)`}`,
+      inline: true,
+    },
+  ];
+
+  if (run?.account) {
+    let accVal = `**${run.account}**`;
+    if (run.thLevel) accVal += ` (${run.thLevel})`;
+    if (run.multiVillage?.enabled && run.running && run.multiVillage.remainingText) {
+      accVal += `\n⏳ **${run.multiVillage.remainingText}**`;
+      if (run.multiVillage.nextAccount) {
+        accVal += ` _(Next: ${run.multiVillage.nextAccount})_`;
+      }
+    }
+    fields.push({
+      name: "Active Account",
+      value: accVal,
+      inline: true,
+    });
+  }
+
+  fields.push({
+    name: "File",
+    value: `\`${activeFile}\``,
+    inline: false,
+  });
+
   return {
     title: `${emoji} ${log.name}`,
     description: `\`\`\`text\n${recentLines || " "}\n\`\`\``,
     color,
-    fields: [
-      {
-        name: "Status",
-        value: statusText,
-        inline: true,
-      },
-      {
-        // Discord renders <t:unix:R> as a live relative time, so it stays
-        // correct between embed edits instead of freezing at "180s".
-        name: "Last activity",
-        value: `${discordRelativeTime(log.lastActivity)}${secondsWithoutActivity >= 60 ? "" : ` (${secondsWithoutActivity}s)`}`,
-        inline: true,
-      },
-      {
-        name: "File",
-        value: `\`${activeFile}\``,
-        inline: false,
-      },
-    ],
+    fields,
     footer: {
       text: log.activePath || log.path,
     },
@@ -2039,6 +2121,7 @@ function parseAutoControlInstances(rawValue) {
       device: parts[3] || "",
       version: normalizeAutoControlVersion(parts[4]),
       active: parseBooleanValue(parts[5], false),
+      logsDir: parts[6] || "",
     });
   }
 
@@ -2143,7 +2226,7 @@ function autoControlConfig(token, fallbackChannelId) {
     token,
     ownerIds: parseOwnerIds(process.env.DISCORD_OWNER_ID),
     channelId: optionalChannelId("AUTOCONTROL_CHANNEL_ID") || fallbackChannelId,
-    channelName: (process.env.AUTOCONTROL_CHANNEL_NAME || "NullWebMonitor Panel").trim(),
+    channelName: (process.env.AUTOCONTROL_CHANNEL_NAME || "XOR WebMonitor Panel").trim(),
     adbPath: process.env.AUTOCONTROL_ADB_PATH || "",
     statsCrop: process.env.AUTOCONTROL_STATS_CROP || "227,31,781,590",
     ldConsolePath: process.env.LDPLAYER_CONSOLE_PATH || "C:\\LDPlayer\\LDPlayer9\\ldconsole.exe",
@@ -2172,7 +2255,18 @@ function controlPanelPayload(control) {
   const rendered = control.instances.map((instance) => {
     const device = instance.device || "no ADB device";
     const autoStart = instance.active ? "auto-start" : "manual";
-    return `**${instance.label}**\n\`${device}\` · ${normalizeAutoControlVersion(instance.version)} · ${autoStart}`;
+    const run = instanceRunStateCached(instance);
+    let accountLine = "";
+    if (run.account) {
+      accountLine = ` · 🏰 **${run.account}**${run.thLevel ? ` (${run.thLevel})` : ""}`;
+      if (run.multiVillage?.enabled && run.running && run.multiVillage.remainingText) {
+        accountLine += ` · ⏳ **${run.multiVillage.remainingText}**`;
+        if (run.multiVillage.nextAccount) {
+          accountLine += ` _(Next: ${run.multiVillage.nextAccount})_`;
+        }
+      }
+    }
+    return `**${instance.label}**\n\`${device}\` · ${normalizeAutoControlVersion(instance.version)} · ${autoStart}${accountLine}`;
   });
 
   const shown = [];
@@ -2283,12 +2377,13 @@ function withTimeout(promise, ms, label) {
 
 async function executeExeAction(control, action, instance) {
   const hints = processHintsForInstance(control, instance);
+  const scriptPath = resolveScriptPath("control-autoclash-window.ps1");
   const args = [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    path.join(process.cwd(), "control-autoclash-window.ps1"),
+    scriptPath,
     "-Action",
     action,
     "-ProcessName",
@@ -2306,7 +2401,7 @@ async function executeExeAction(control, action, instance) {
   // The raw PowerShell failure is a wall of stack trace that buries the one
   // thing that matters: AutoClash is not open, so there is no button to press.
   try {
-    return await execFileText("powershell", args, { cwd: process.cwd() });
+    return await execFileText("powershell", args, { cwd: path.dirname(scriptPath) });
   } catch (error) {
     if (/No AutoClash window found/.test(error.message)) {
       throw new Error(
@@ -2358,46 +2453,49 @@ async function closeAutoClashExe(instance) {
     throw new Error(`No AutoClash exe found for ${instance?.label || "selected window"}. Saved path: ${instance?.exePath || "empty"}`);
   }
 
+  const scriptPath = resolveScriptPath("close-autoclash-exe.ps1");
   const output = await execFileText("powershell", [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    path.join(process.cwd(), "close-autoclash-exe.ps1"),
+    scriptPath,
     "-ExePath",
     exePath,
   ], {
-    cwd: process.cwd(),
+    cwd: path.dirname(scriptPath),
     timeout: 15000,
   });
   return { exePath, output };
 }
 
 async function activateAutoClashLaunchWindow() {
+  const scriptPath = resolveScriptPath("activate-autoclash-launch.ps1");
   const args = [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    path.join(process.cwd(), "activate-autoclash-launch.ps1"),
+    scriptPath,
   ];
-  return execFileText("powershell", args, { cwd: process.cwd(), timeout: 25000 });
+  return execFileText("powershell", args, { cwd: path.dirname(scriptPath), timeout: 25000 });
 }
 
 async function runAutoClashUpdateHandler(instance, config) {
   const exePath = resolveAutoClashExePath(instance);
   const expectedRoot = exePath ? path.dirname(exePath) : "";
+  const scriptPath = resolveScriptPath("handle-autoclash-update.ps1");
   const args = [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    path.join(process.cwd(), "handle-autoclash-update.ps1"),
+    scriptPath,
   ];
   if (expectedRoot) args.push("-ExpectedRoot", expectedRoot);
 
   const output = await execFileText("powershell", args, {
-    cwd: process.cwd(),
+    cwd: path.dirname(scriptPath),
     timeout: 270000,
   });
 
@@ -2671,12 +2769,13 @@ async function captureStats(control, instance) {
   const file = path.join(dir, `${instance.id}-stats-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
   const statsPoint = statsPointForInstance(instance);
   const hints = processHintsForInstance(control, instance);
+  const scriptPath = resolveScriptPath("capture-autoclash-window.ps1");
   const args = [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    path.join(process.cwd(), "capture-autoclash-window.ps1"),
+    scriptPath,
     "-OutputPath",
     file,
     "-ProcessName",
@@ -2687,7 +2786,7 @@ async function captureStats(control, instance) {
   const exePath = resolveAutoClashExePath(instance);
   if (exePath) args.push("-ExePath", exePath);
   args.push("-Crop", control.statsCrop, "-EnsureStatsTab", "-StatsX", String(statsPoint.x), "-StatsY", String(statsPoint.y));
-  await execFileText("powershell", args, { cwd: process.cwd() });
+  await execFileText("powershell", args, { cwd: path.dirname(scriptPath) });
   requireReadableFile(file, "AutoClash stats screenshot");
   return file;
 }
@@ -2723,13 +2822,14 @@ async function readAutoClashWindows({ force = false } = {}) {
   if (!force && Date.now() - windowCache.at < WINDOW_CACHE_MS) return windowCache.rows;
 
   try {
+    const scriptPath = resolveScriptPath("list-autoclash-windows.ps1");
     const output = await execFileText("powershell", [
       "-NoProfile",
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      path.join(process.cwd(), "list-autoclash-windows.ps1"),
-    ], { cwd: process.cwd(), timeout: 20000 });
+      scriptPath,
+    ], { cwd: path.dirname(scriptPath), timeout: 20000 });
     const parsed = JSON.parse(output.trim() || "[]");
     windowCache.rows = Array.isArray(parsed) ? parsed : [parsed];
   } catch (error) {
@@ -2762,6 +2862,203 @@ function windowForInstance(rows, instance) {
 // Cache-only view for the frequent state poll, so rendering the Control cards
 // never spawns PowerShell. A refresh is kicked off in the background when the
 // cache goes stale.
+
+const instanceAccountTracking = new Map();
+
+function extractThLevel(accountName, accountConfig = null) {
+  if (accountConfig && typeof accountConfig === "object") {
+    for (const key of ["TOWNHALL_LEVEL", "HOME_TOWNHALL_LEVEL", "TH_LEVEL", "TOWNHALL", "HOME_TOWNHALL"]) {
+      if (accountConfig[key] !== undefined && accountConfig[key] !== "") {
+        return `TH${accountConfig[key]}`;
+      }
+    }
+  }
+  const match = String(accountName || "").match(/(?:^|[^a-zA-Z0-9])(?:th|townhall|th-)\s*(\d{1,2})(?:$|[^a-zA-Z0-9])/i);
+  if (match) {
+    return `TH${match[1]}`;
+  }
+  return "";
+}
+
+function parseLogFileNameDate(fileName, stat = null) {
+  const match = String(fileName).match(/log-(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})(?:-(\d{2}))?\.txt/i);
+  if (match) {
+    const [_, y, m, d, h, min, s] = match;
+    const date = new Date(Number(y), Number(m) - 1, Number(d), Number(h), Number(min), Number(s || 0));
+    if (!isNaN(date.getTime())) return date.getTime();
+  }
+  return stat ? (stat.birthtimeMs || stat.mtimeMs) : Date.now();
+}
+
+function scanLogTailForProfile(rootDir, switchMinutes = 30, now = new Date()) {
+  if (!rootDir || !fs.existsSync(rootDir)) return null;
+  const logsDir = path.join(rootDir, "logs");
+  if (!fs.existsSync(logsDir)) return null;
+
+  try {
+    const files = fs.readdirSync(logsDir)
+      .filter((f) => f.startsWith("log-") && f.endsWith(".txt"))
+      .map((f) => {
+        const full = path.join(logsDir, f);
+        const stat = fs.statSync(full);
+        return { name: f, full, mtime: stat.mtimeMs, birthtime: stat.birthtimeMs, stat };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (!files.length) return null;
+    const latestFile = files[0].full;
+    const sessionStartTime = parseLogFileNameDate(files[0].name, files[0].stat);
+    const size = files[0].stat.size;
+    const readBytes = Math.min(size, 256 * 1024);
+    const buffer = Buffer.alloc(readBytes);
+    const fd = fs.openSync(latestFile, "r");
+    try {
+      fs.readSync(fd, buffer, 0, readBytes, size - readBytes);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const text = buffer.toString("utf8");
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+
+    const switchEvents = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(/(?:\[PROFILES?\]\s*(?:Starting on|Switching to|Switched to)|(?:Starting on|Switching to|Switched to)\s+profile)\s+([a-zA-Z0-9_\-\.]+)/i)
+        || line.match(/\[PROFILES?\](?:Profile\s+loaded\s+OK\s+for|Loaded\s+profile)\s+([a-zA-Z0-9_\-\.]+)/i);
+      if (match && !/^(?:builder|home|village|main|clash)/i.test(match[1])) {
+        const account = match[1].trim();
+        const clockDate = lineClockToDate(line, now);
+        switchEvents.push({ lineIndex: i, account, clockDate });
+      }
+    }
+
+    if (switchEvents.length > 0) {
+      const latest = switchEvents[switchEvents.length - 1];
+      const switchIndex = switchEvents.length - 1;
+      const switchMs = Math.max(1, switchMinutes) * 60 * 1000;
+      const switchedAt = latest.clockDate ? latest.clockDate.getTime() : (sessionStartTime + (switchIndex * switchMs));
+      return { account: latest.account, switchedAt, sessionStartTime };
+    }
+
+    return { account: null, switchedAt: sessionStartTime, sessionStartTime };
+  } catch {}
+
+  return null;
+}
+
+function resolveInstanceAccountDetails(instance, activeAccountName, isRunning) {
+  const instanceConfig = readJsonQuietly(instanceConfigPath(instance)) || {};
+  const rawAccounts = listAccounts(instance);
+  const rootDir = autoClashRootDir(instance);
+  const switchMinutes = Math.max(1, Number(instanceConfig.VILLAGE_SWITCH_MINUTES || instanceConfig.MULTI_VILLAGE_SWITCH_MINUTES || 60));
+  const logProfile = scanLogTailForProfile(rootDir, switchMinutes);
+
+  let currentAccount = String(activeAccountName || "").trim();
+  let logSwitchedAt = 0;
+  if (logProfile) {
+    if (!currentAccount || isRunning) currentAccount = logProfile.account || currentAccount;
+    logSwitchedAt = logProfile.switchedAt;
+  }
+
+  if (!currentAccount && !isRunning && instanceConfig.START_PROFILE) {
+    currentAccount = String(instanceConfig.START_PROFILE).trim();
+  }
+
+  const currentAccountCfg = currentAccount ? readJsonQuietly(accountConfigPath(instance, currentAccount)) : null;
+  const thLevel = extractThLevel(currentAccount, currentAccountCfg);
+
+  const multiVillageEnabled = parseBooleanValue(instanceConfig.MULTI_VILLAGE_ENABLED, false);
+  const switchCondition = String(instanceConfig.VILLAGE_SWITCH_CONDITION || "Time");
+
+  const accountsWithTh = rawAccounts.map((acc) => {
+    const accCfg = readJsonQuietly(accountConfigPath(instance, acc.name));
+    return {
+      name: acc.name,
+      enabled: Boolean(acc.enabled),
+      thLevel: extractThLevel(acc.name, accCfg),
+      active: acc.name.toLowerCase() === currentAccount.toLowerCase(),
+    };
+  });
+
+  const enabledAccounts = accountsWithTh.filter((acc) => acc.enabled);
+
+  const currentAccountCfgPath = currentAccount ? accountConfigPath(instance, currentAccount) : "";
+  let profileFileMtime = 0;
+  if (currentAccountCfgPath && fs.existsSync(currentAccountCfgPath)) {
+    try {
+      profileFileMtime = fs.statSync(currentAccountCfgPath).mtimeMs;
+    } catch {}
+  }
+
+  let effectiveSwitchedAt = 0;
+  if (profileFileMtime > 0 && (Date.now() - profileFileMtime) < 12 * 60 * 60 * 1000) {
+    effectiveSwitchedAt = profileFileMtime;
+  } else if (logSwitchedAt > 0) {
+    effectiveSwitchedAt = logSwitchedAt;
+  }
+
+  const key = instance?.id || instance?.label || "default";
+  let tracking = instanceAccountTracking.get(key);
+  const now = Date.now();
+
+  if (!tracking || (currentAccount && tracking.account && tracking.account.toLowerCase() !== currentAccount.toLowerCase())) {
+    tracking = {
+      account: currentAccount,
+      switchedAt: effectiveSwitchedAt > 0 ? effectiveSwitchedAt : now,
+    };
+    instanceAccountTracking.set(key, tracking);
+  } else if (effectiveSwitchedAt > 0 && Math.abs(effectiveSwitchedAt - tracking.switchedAt) > 1000) {
+    tracking.switchedAt = effectiveSwitchedAt;
+  }
+
+  let remainingMinutes = 0;
+  let remainingSeconds = 0;
+  let switchDueAt = 0;
+  let nextAccount = "";
+
+  if (multiVillageEnabled && isRunning && switchMinutes > 0) {
+    const switchMs = switchMinutes * 60 * 1000;
+    const baseTime = effectiveSwitchedAt > 0 ? effectiveSwitchedAt : tracking.switchedAt;
+    const elapsedMs = Math.max(0, now - baseTime);
+    const cycleElapsed = elapsedMs % switchMs;
+    const remainingMs = Math.max(0, switchMs - cycleElapsed);
+    remainingMinutes = Math.floor(remainingMs / 60000);
+    remainingSeconds = Math.floor((remainingMs % 60000) / 1000);
+    switchDueAt = now + remainingMs;
+
+    if (enabledAccounts.length > 1) {
+      const currentIndex = enabledAccounts.findIndex((acc) => acc.name.toLowerCase() === currentAccount.toLowerCase());
+      const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % enabledAccounts.length : 0;
+      nextAccount = enabledAccounts[nextIndex]?.name || "";
+    }
+  }
+
+  const remainingText = multiVillageEnabled && isRunning
+    ? (remainingMinutes > 0 || remainingSeconds > 0
+        ? `${remainingMinutes}:${String(remainingSeconds).padStart(2, "0")} left`
+        : "switching soon")
+    : "";
+
+  return {
+    account: currentAccount,
+    thLevel,
+    multiVillage: {
+      enabled: multiVillageEnabled,
+      switchCondition,
+      switchMinutes,
+      accountSwitchedAt: tracking.switchedAt,
+      switchDueAt,
+      remainingMinutes,
+      remainingSeconds,
+      remainingText,
+      currentAccount,
+      nextAccount,
+      totalAccounts: enabledAccounts.length,
+      accounts: accountsWithTh,
+    },
+  };
+}
+
 function instanceRunStateCached(instance) {
   if (Date.now() - windowCache.at >= WINDOW_CACHE_MS) {
     readAutoClashWindows().catch(() => {});
@@ -2769,12 +3066,18 @@ function instanceRunStateCached(instance) {
   const rows = windowCache.rows;
   const processes = processesForInstance(rows, instance);
   const win = windowForInstance(rows, instance);
+  const isRunning = processes.length > 0;
+  const rawAccount = win?.account || "";
+  const details = resolveInstanceAccountDetails(instance, rawAccount, isRunning);
+
   return {
-    running: processes.length > 0,
+    running: isRunning,
     processCount: processes.length,
     version: win?.version || "",
     adbPort: win?.adbPort || "",
-    account: win?.account || "",
+    account: details.account,
+    thLevel: details.thLevel,
+    multiVillage: details.multiVillage,
     known: windowCache.at > 0,
   };
 }
@@ -2783,12 +3086,18 @@ async function instanceRunState(instance) {
   const rows = await readAutoClashWindows();
   const processes = processesForInstance(rows, instance);
   const win = windowForInstance(rows, instance);
+  const isRunning = processes.length > 0;
+  const rawAccount = win?.account || "";
+  const details = resolveInstanceAccountDetails(instance, rawAccount, isRunning);
+
   return {
-    running: processes.length > 0,
+    running: isRunning,
     processCount: processes.length,
     version: win?.version || "",
     adbPort: win?.adbPort || "",
-    account: win?.account || "",
+    account: details.account,
+    thLevel: details.thLevel,
+    multiVillage: details.multiVillage,
     title: win?.title || "",
   };
 }
@@ -2828,21 +3137,66 @@ const RUNTIME_STATE_KEYS = new Set([
 // machine, and writing the answers back to .env.
 // ---------------------------------------------------------------------------
 
+function detectAccessNative(port) {
+  const lanAddresses = [];
+  let tailscaleIp = "";
+  let tailscaleInstalled = false;
+  try {
+    const ifaces = os.networkInterfaces();
+    for (const [name, addrs] of Object.entries(ifaces)) {
+      for (const addr of addrs || []) {
+        if (addr.family !== "IPv4" && addr.family !== 4) continue;
+        if (addr.internal) continue;
+        const ip = addr.address;
+        if (ip.startsWith("127.") || ip.startsWith("169.254.") || ip === "0.0.0.0") continue;
+        const isTs = name.toLowerCase().includes("tailscale") || (ip.startsWith("100.") && (() => {
+          const second = Number(ip.split(".")[1]);
+          return second >= 64 && second <= 127;
+        })());
+        if (isTs) {
+          tailscaleInstalled = true;
+          tailscaleIp = ip;
+        } else {
+          lanAddresses.push(ip);
+        }
+      }
+    }
+  } catch {}
+  return {
+    port: Number(port || 8477),
+    tailscaleInstalled,
+    tailscaleIp,
+    tailscaleName: tailscaleIp ? os.hostname().toLowerCase() : "",
+    tailscaleProfile: "Private",
+    firewallRuleExists: false,
+    lanAddresses,
+  };
+}
+
 async function detectAccess(port) {
+  const fallback = detectAccessNative(port);
   try {
     const output = await execFileText("powershell", [
       "-NoProfile",
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      path.join(process.cwd(), "detect-access.ps1"),
+      path.join(__dirname, "detect-access.ps1"),
       "-Port",
       String(port || 8477),
-    ], { cwd: process.cwd(), timeout: 60000 });
-    return JSON.parse(output.trim() || "{}");
+    ], { cwd: __dirname, timeout: 60000 });
+    const parsed = JSON.parse(output.trim() || "{}");
+    return {
+      ...fallback,
+      ...parsed,
+      tailscaleInstalled: parsed.tailscaleInstalled || fallback.tailscaleInstalled,
+      tailscaleIp: parsed.tailscaleIp || fallback.tailscaleIp,
+      tailscaleName: parsed.tailscaleName || fallback.tailscaleName,
+      lanAddresses: (parsed.lanAddresses && parsed.lanAddresses.length) ? parsed.lanAddresses : fallback.lanAddresses,
+    };
   } catch (error) {
-    console.error(`[setup] Access detection failed: ${error.message}`);
-    return { tailscaleInstalled: false, lanAddresses: [], firewallRuleExists: false };
+    console.error(`[setup] Access detection fallback to native: ${error.message}`);
+    return fallback;
   }
 }
 
@@ -2876,34 +3230,53 @@ async function detectAdbDevices(adbPath) {
 // Pre-fills the Instances step from AutoClash windows that are already running.
 async function detectInstances() {
   const rows = await readAutoClashWindows({ force: true });
-  const seen = new Map();
+  const byFolder = new Map();
 
   for (const row of rows) {
     if (!row.path) continue;
     const folder = path.dirname(row.path);
-    const existing = seen.get(folder.toLowerCase());
-    // Prefer the process that actually owns a window: it carries the title with
-    // the version, ADB port and current account.
-    if (existing && !(row.hasWindow && !existing.hasWindow)) continue;
-
     const adbPort = row.adbPort ? String(row.adbPort) : "";
-    seen.set(folder.toLowerCase(), {
+    const baseName = path.basename(folder) || "AutoClash";
+    const device = adbPort ? `127.0.0.1:${adbPort}` : "";
+    const key = folder.toLowerCase();
+
+    const candidate = {
+      pid: row.pid,
       folder,
       hasWindow: Boolean(row.hasWindow),
-      suggestedName: path.basename(folder),
-      device: adbPort ? `127.0.0.1:${adbPort}` : "",
+      suggestedName: baseName,
+      device,
       version: row.version || "",
       account: row.account || "",
-      // MuMu ports start at 16384; LDPlayer at 5555.
       emulator: adbPort ? (Number(adbPort) >= 16384 ? "mumu" : "ldplayer") : "",
       logsDir: fs.existsSync(path.join(folder, "logs")) ? path.join(folder, "logs") : "",
       adbPath: fs.existsSync(path.join(folder, "Tools", "adb", "adb.exe"))
         ? path.join(folder, "Tools", "adb", "adb.exe")
         : "",
-    });
+    };
+
+    if (byFolder.has(key)) {
+      const existing = byFolder.get(key);
+      if (!existing.device && candidate.device) {
+        existing.device = candidate.device;
+        existing.emulator = candidate.emulator;
+      }
+      if (!existing.account && candidate.account) {
+        existing.account = candidate.account;
+      }
+      if (!existing.hasWindow && candidate.hasWindow) {
+        existing.hasWindow = true;
+        existing.pid = candidate.pid;
+      }
+      if (!existing.version && candidate.version) {
+        existing.version = candidate.version;
+      }
+    } else {
+      byFolder.set(key, candidate);
+    }
   }
 
-  return [...seen.values()];
+  return Array.from(byFolder.values());
 }
 
 // Serialises the wizard's answers into .env using the existing writer, so the
@@ -2915,6 +3288,7 @@ function applySetup(payload) {
   const updates = {};
   const instanceParts = [];
   const logParts = [];
+  const usedIds = new Set();
 
   instances.forEach((raw, index) => {
     const name = String(raw.name || "").trim();
@@ -2924,21 +3298,30 @@ function applySetup(payload) {
     if (/[|;]/.test(name)) throw new Error(`"${name}" cannot contain | or ; — those separate entries in .env.`);
     if (!fs.existsSync(folder)) throw new Error(`Folder not found for "${name}": ${folder}`);
 
+    // Disambiguate ID if duplicate names exist
+    let id = name;
+    if (usedIds.has(id.toLowerCase())) {
+      let suffix = 2;
+      while (usedIds.has(`${id.toLowerCase()}_${suffix}`)) suffix += 1;
+      id = `${name}_${suffix}`;
+    }
+    usedIds.add(id.toLowerCase());
+
     const device = String(raw.device || "").trim();
     const version = normalizeAutoControlVersion(raw.version);
     const active = raw.active === false ? "false" : "true";
-    // id|label|exePath|device|version|autostart
-    instanceParts.push([name, name, folder, device, version, active].join("|"));
-
     const logsDir = String(raw.logsDir || path.join(folder, "logs")).trim();
-    logParts.push(`${name}=${logsDir}`);
+
+    // id|label|exePath|device|version|autostart|logsDir
+    instanceParts.push([id, name, folder, device, version, active, logsDir].join("|"));
+    logParts.push(`${id}=${logsDir}`);
 
     // Each instance can post to its own Discord channel, separate from the
     // control panel's. The channel name is what the bot renames that channel to
     // as status changes (🟢/🟠/🔴), so it is worth letting the user choose.
     const channelId = String(raw.channelId || "").trim();
-    if (channelId) updates[envKeyForLog(name, "CHANNEL_ID")] = channelId;
-    updates[envKeyForLog(name, "CHANNEL_NAME")] = String(raw.channelName || "").trim() || name;
+    if (channelId) updates[envKeyForLog(id, "CHANNEL_ID")] = channelId;
+    updates[envKeyForLog(id, "CHANNEL_NAME")] = String(raw.channelName || "").trim() || name;
   });
 
   updates.AUTOCONTROL_INSTANCES = instanceParts.join(";");
@@ -2966,7 +3349,7 @@ function applySetup(payload) {
     // The panel channel is renamed once on start so it is obvious which channel
     // belongs to the monitor. No status emoji here — the panel is not an
     // instance and has no running/paused/down state of its own.
-    updates.AUTOCONTROL_CHANNEL_NAME = String(discord.channelName || "").trim() || "NullWebMonitor Panel";
+    updates.AUTOCONTROL_CHANNEL_NAME = String(discord.channelName || "").trim() || "XOR WebMonitor Panel";
   }
   if (discord.ownerId) updates.DISCORD_OWNER_ID = String(discord.ownerId).trim();
 
@@ -2977,6 +3360,9 @@ function applySetup(payload) {
   }
 
   writeEnvFile(updates);
+  for (const [key, val] of Object.entries(updates)) {
+    process.env[key] = val;
+  }
   return { instances: instances.length };
 }
 
@@ -2988,7 +3374,7 @@ async function testDiscord(token, channelId) {
   if (!clean || !channel) throw new Error("Both a bot token and a channel ID are required.");
 
   const me = await discordRequest(clean, "/users/@me");
-  await sendDiscordMessage(clean, channel, "NullWebMonitor test message — setup is working.");
+  await sendDiscordMessage(clean, channel, "XOR WebMonitor test message — setup is working.");
   return { username: me.username, id: me.id };
 }
 
@@ -3040,6 +3426,8 @@ function discoverEnums(instances) {
 }
 
 function schemaSnapshotPath() {
+  const inDir = path.join(__dirname, "config-schema.json");
+  if (fs.existsSync(inDir)) return inDir;
   return path.join(process.cwd(), "config-schema.json");
 }
 
@@ -3196,6 +3584,11 @@ function newestBackup(filePath) {
 }
 
 function statsDirForInstance(instance) {
+  if (instance?.logsDir && fs.existsSync(instance.logsDir)) {
+    const statsInLogs = path.join(instance.logsDir, "stats");
+    if (fs.existsSync(statsInLogs)) return statsInLogs;
+    return instance.logsDir;
+  }
   const rootDir = autoClashRootDir(instance);
   return rootDir ? path.join(rootDir, "logs", "stats") : "";
 }
@@ -3398,6 +3791,84 @@ function dailyStatsFromDb(instance) {
   // than look like the toggle is broken.
   const sessions = rows.filter((row) => row.day_key === date).length;
   return { date, stats, sessions, source: "stats.db" };
+}
+
+function allTimeStatsFromDb(instance) {
+  const dbPath = statsDbFile(instance);
+  if (!dbPath) return null;
+
+  const rows = readSessionStatsRowsFromDb(instance);
+  if (!rows.length) return null;
+
+  const dates = [...new Set(rows.map((row) => row.day_key).filter(Boolean))].sort();
+  const stats = {};
+  for (const column of SESSION_STATS_COLUMNS) {
+    if (["session_key", "day_key", "timestamp", "runtime"].includes(column)) continue;
+    stats[column] = rows.reduce((sum, row) => sum + Number(row[column] || 0), 0);
+  }
+  const sessions = rows.length;
+  const days = dates.length || 1;
+  const firstDate = dates[0] || "";
+  const lastDate = dates[dates.length - 1] || "";
+  return { firstDate, lastDate, dates, stats, sessions, days, source: "stats.db" };
+}
+
+function allTimeStatsFallback(instance) {
+  const fromDb = allTimeStatsFromDb(instance);
+  if (fromDb) return fromDb;
+
+  const statsDir = statsDirForInstance(instance);
+  if (!statsDir || !fs.existsSync(statsDir)) return null;
+
+  const dailyFile = path.join(statsDir, "daily_totals.json");
+  if (fs.existsSync(dailyFile)) {
+    try {
+      const daily = readJsonFile(dailyFile);
+      const dates = Object.keys(daily).sort();
+      if (dates.length) {
+        const stats = {};
+        for (const date of dates) {
+          const entry = daily[date] || {};
+          for (const [k, v] of Object.entries(entry)) {
+            if (typeof v === "number") stats[k] = (stats[k] || 0) + v;
+          }
+        }
+        return {
+          firstDate: dates[0],
+          lastDate: dates[dates.length - 1],
+          dates,
+          stats,
+          sessions: dates.length,
+          days: dates.length,
+          source: "daily_totals.json",
+        };
+      }
+    } catch {}
+  }
+
+  const sessionFiles = fs.readdirSync(statsDir).filter((f) => f.startsWith("session_") && f.endsWith(".json"));
+  if (sessionFiles.length) {
+    const stats = {};
+    for (const f of sessionFiles) {
+      try {
+        const data = readJsonFile(path.join(statsDir, f));
+        for (const [k, v] of Object.entries(data)) {
+          if (typeof v === "number") stats[k] = (stats[k] || 0) + v;
+        }
+      } catch {}
+    }
+    return {
+      firstDate: "",
+      lastDate: "",
+      dates: [],
+      stats,
+      sessions: sessionFiles.length,
+      days: 1,
+      source: "session JSON files",
+    };
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -3658,6 +4129,38 @@ function dailyStatsEmbed(instance) {
     footer: { text: `Main base above · Source: ${source}` },
   };
 }
+
+function allTimeStatsEmbed(instance) {
+  let result = allTimeStatsFallback(instance);
+  if (!result) {
+    throw new Error(`No all-time stats were found for ${instance.label}. Expected stats.db or session JSON under: ${statsDirForInstance(instance) || "unknown stats folder"}`);
+  }
+
+  const { stats, sessions, days, source } = result;
+  const runtime = Number(stats.runtime_seconds || 0);
+  const attacks = Number(stats.total_attacks || 0);
+  const attackRate = runtime >= 300 && attacks ? ` · **${(attacks / (runtime / 3600)).toFixed(1)}**/h` : "";
+  const daySummary = days > 1 ? ` (${days} days)` : "";
+
+  return {
+    title: `🏆 ${instance.label} — All-Time Totals`,
+    description: `Runtime **${formatDuration(stats.runtime_seconds)}** across **${fullNumber(sessions)}** sessions${daySummary} · **${fullNumber(attacks)}** attacks${attackRate}`,
+    color: 15844367,
+    fields: [
+      { name: "Gold", value: embedValue("gained", stats.gold_gained, compactNumber) + perHour(stats.gold_gained, runtime), inline: true },
+      { name: "Elixir", value: embedValue("gained", stats.elixir_gained, compactNumber) + perHour(stats.elixir_gained, runtime), inline: true },
+      { name: "Dark", value: embedValue("gained", stats.dark_gained, compactNumber) + perHour(stats.dark_gained, runtime), inline: true },
+      { name: "Donations", value: embedValue("completed", stats.donations_completed), inline: true },
+      { name: "Walls", value: embedValue("upgraded", stats.walls_upgraded), inline: true },
+      { name: "Progress", value: `Obstacles: **${fullNumber(stats.obstacles_removed)}**\nUpgrades: **${fullNumber(stats.upgrades_done)}**\nResearch: **${fullNumber(stats.research_done)}**`, inline: true },
+      { name: "Attack results", value: starsValue(stats), inline: false },
+      { name: "​", value: "🔨 **Builder Base**", inline: false },
+      { name: "Attacks", value: `**${fullNumber(stats.bb_attacks)}**`, inline: true },
+      { name: "Walls", value: `**${fullNumber(stats.bb_walls_upgraded)}** upgraded`, inline: true },
+    ],
+    footer: { text: `All-time totals · Source: ${source}` },
+  };
+}
 async function editInteractionEmbed(token, interaction, embed) {
   await discordRequest(token, `/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
     method: "PATCH",
@@ -3713,6 +4216,7 @@ async function captureLiveFrame(control, instance, options = {}) {
   const stamp = `${safeFileName(instance.id)}-live-${process.pid}-${Date.now()}`;
   const pngPath = path.join(dir, `${stamp}.png`);
   const jpgPath = path.join(dir, `${stamp}.jpg`);
+  const scriptPath = resolveScriptPath("resize-image.ps1");
 
   fs.writeFileSync(pngPath, await adbScreencapBytes(control, instance));
   try {
@@ -3721,12 +4225,12 @@ async function captureLiveFrame(control, instance, options = {}) {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      path.join(process.cwd(), "resize-image.ps1"),
+      scriptPath,
       "-In", pngPath,
       "-Out", jpgPath,
       "-MaxWidth", String(maxWidth),
       "-Quality", String(quality),
-    ], { cwd: process.cwd(), timeout: 20000 });
+    ], { cwd: path.dirname(scriptPath), timeout: 20000 });
     return fs.readFileSync(jpgPath);
   } finally {
     for (const file of [pngPath, jpgPath]) {
@@ -3752,6 +4256,7 @@ async function frameHash(control, instance) {
   const dir = path.join(process.cwd(), "control-screenshots");
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${safeFileName(instance.id)}-hash-${process.pid}-${Date.now()}.png`);
+  const scriptPath = resolveScriptPath("image-hash.ps1");
   fs.writeFileSync(file, await adbScreencapBytes(control, instance));
   try {
     const output = await execFileText("powershell", [
@@ -3759,10 +4264,10 @@ async function frameHash(control, instance) {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      path.join(process.cwd(), "image-hash.ps1"),
+      scriptPath,
       "-In",
       file,
-    ], { cwd: process.cwd(), timeout: 25000 });
+    ], { cwd: path.dirname(scriptPath), timeout: 25000 });
     return output.match(/HASH=([0-9a-f]{16})/i)?.[1] || null;
   } finally {
     deleteFileQuietly(file);
@@ -3882,16 +4387,17 @@ async function captureFullScreen() {
   const dir = SCREENSHOT_DIR;
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `full-screen-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
+  const scriptPath = resolveScriptPath("capture-fullscreen.ps1");
   const args = [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    path.join(process.cwd(), "capture-fullscreen.ps1"),
+    scriptPath,
     "-OutputPath",
     file,
   ];
-  await execFileText("powershell", args, { cwd: process.cwd() });
+  await execFileText("powershell", args, { cwd: path.dirname(scriptPath) });
   return file;
 }
 
@@ -4096,6 +4602,12 @@ async function handleControlInteraction(control, interaction) {
       return;
     }
 
+    if (action === "alltimestats") {
+      if (!instance) throw new Error(`Unknown instance: ${instanceId}`);
+      await editInteractionEmbed(control.token, interaction, allTimeStatsEmbed(instance));
+      return;
+    }
+
     if (action === "screen") {
       if (!instance) throw new Error(`Unknown instance: ${instanceId}`);
       const file = await captureAdbScreen(control, instance);
@@ -4222,9 +4734,223 @@ async function startControlGateway(control) {
   };
 }
 
+function printStartupBanner() {
+  console.log(`
+  __  ______  ____  
+  \\ \\/ / __ \\/ __ \\ 
+   \\  / / / / /_/ / 
+   / / /_/ / _, _/  
+  /_/\\____/_/ |_|   
+  ─── XOR WebMonitor v2.0 ───
+  Self-Hosted Control Panel & Stats Monitor
+  `);
+  console.log("Type 'help' in this terminal at any time for available commands.\n");
+}
+
+async function handlePasswordResetCli(newPasswordArg) {
+  loadEnv();
+  const readline = require("readline");
+  let newPassword = String(newPasswordArg || "").trim();
+
+  if (!newPassword || newPassword.startsWith("-")) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    newPassword = await new Promise((resolve) => {
+      rl.question("\nEnter new web panel password (min 8 characters): ", (ans) => {
+        rl.close();
+        resolve(String(ans || "").trim());
+      });
+    });
+  }
+
+  if (newPassword.length < 8) {
+    console.error("\n[error] Password must be at least 8 characters long.");
+    process.exit(1);
+  }
+
+  const { makePasswordHash } = require("./web-server");
+  const hash = makePasswordHash(newPassword);
+  writeEnvFile({ WEB_PASSWORD_HASH: hash });
+  console.log("\n[success] Web panel password has been reset successfully!");
+  console.log("          Saved to .env as WEB_PASSWORD_HASH.");
+  process.exit(0);
+}
+
+function startConsoleInterface(logs, control, config) {
+  if (!process.stdin.isTTY) return;
+  const readline = require("readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: "xor> ",
+  });
+
+  const origLog = console.log;
+  const origError = console.error;
+  const origWarn = console.warn;
+
+  function safeLog(writer, args) {
+    if (process.stdout.isTTY) {
+      try {
+        readline.clearLine(process.stdout, 0);
+        readline.cursorTo(process.stdout, 0);
+      } catch {}
+    }
+    writer.apply(console, args);
+    if (process.stdout.isTTY) {
+      rl.prompt(true);
+    }
+  }
+
+  console.log = (...args) => safeLog(origLog, args);
+  console.error = (...args) => safeLog(origError, args);
+  console.warn = (...args) => safeLog(origWarn, args);
+
+  rl.prompt(true);
+
+  rl.on("line", async (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      rl.prompt();
+      return;
+    }
+
+    const parts = trimmed.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1);
+
+    switch (cmd) {
+      case "help":
+      case "?":
+        console.log("\n=======================================================");
+        console.log("             XOR WebMonitor Console Commands           ");
+        console.log("=======================================================");
+        console.log("  help                  : Show this command menu");
+        console.log("  reset-password [pass] : Reset the web panel admin password");
+        console.log("  status                : Display status for all instances");
+        console.log("  stats                 : Display latest session stats");
+        console.log("  instances             : List active windows and ADB ports");
+        console.log("  restart               : Restart the monitor server");
+        console.log("  clear / cls           : Clear terminal screen");
+        console.log("  exit / quit           : Stop and exit monitor");
+        console.log("=======================================================\n");
+        break;
+
+      case "reset-password":
+      case "passwd":
+      case "password": {
+        let newPass = args.join(" ").trim();
+        if (!newPass) {
+          rl.question("Enter new password (min 8 chars): ", (ans) => {
+            const pass = String(ans || "").trim();
+            if (pass.length < 8) {
+              console.log("[error] Password must be at least 8 characters.");
+            } else {
+              const { makePasswordHash } = require("./web-server");
+              const hash = makePasswordHash(pass);
+              writeEnvFile({ WEB_PASSWORD_HASH: hash });
+              console.log("[success] Password reset successfully in .env!");
+            }
+            rl.prompt();
+          });
+          return;
+        } else if (newPass.length < 8) {
+          console.log("[error] Password must be at least 8 characters.");
+        } else {
+          const { makePasswordHash } = require("./web-server");
+          const hash = makePasswordHash(newPass);
+          writeEnvFile({ WEB_PASSWORD_HASH: hash });
+          console.log("[success] Password reset successfully in .env!");
+        }
+        break;
+      }
+
+      case "status":
+        console.log("\n--- Instances Status ---");
+        if (!logs.length) {
+          console.log("No logs/instances configured yet.");
+        } else {
+          for (const log of logs) {
+            const inst = findControlInstanceForLog(log, config);
+            const run = inst ? instanceRunStateCached(inst) : null;
+            let accInfo = "";
+            if (run?.account) {
+              accInfo = ` | Account: ${run.account}${run.thLevel ? ` (${run.thLevel})` : ""}`;
+              if (run.multiVillage?.enabled && run.running && run.multiVillage.remainingText) {
+                accInfo += ` [⏳ ${run.multiVillage.remainingText}${run.multiVillage.nextAccount ? ` → Next: ${run.multiVillage.nextAccount}` : ""}]`;
+              }
+            }
+            console.log(`[${log.name}] Status: ${log.status}${accInfo} | Last Activity: ${ago(log.lastActivity)}`);
+          }
+        }
+        console.log("------------------------\n");
+        break;
+
+      case "stats":
+        console.log("\n--- Latest Session Stats ---");
+        if (!control.instances.length) {
+          console.log("No instances configured.");
+        } else {
+          for (const inst of control.instances) {
+            try {
+              const res = latestSessionStats(inst);
+              if (res?.stats) {
+                const s = res.stats;
+                console.log(`[${inst.label}] Attacks: ${s.total_attacks || 0} | Gold: ${compactNumber(s.gold_gained)} | Elixir: ${compactNumber(s.elixir_gained)} | Dark: ${compactNumber(s.dark_gained)} | Runtime: ${s.runtime || formatDuration(s.runtime_seconds)}`);
+              } else {
+                console.log(`[${inst.label}] No stats found yet.`);
+              }
+            } catch (err) {
+              console.log(`[${inst.label}] Stats error: ${err.message}`);
+            }
+          }
+        }
+        console.log("----------------------------\n");
+        break;
+
+      case "instances":
+        console.log("\n--- AutoClash Instances ---");
+        for (const inst of control.instances) {
+          const run = instanceRunStateCached(inst);
+          let accInfo = run.account ? ` | Account: ${run.account}${run.thLevel ? ` (${run.thLevel})` : ""}` : "";
+          if (run.multiVillage?.enabled && run.running && run.multiVillage.remainingText) {
+            accInfo += ` | Rotation: ${run.multiVillage.remainingText} (Next: ${run.multiVillage.nextAccount || "N/A"})`;
+          }
+          console.log(`- ID: ${inst.id} | Label: ${inst.label} | Device: ${inst.device || "none"} | AutoStart: ${inst.active ? "ON" : "OFF"}${accInfo}`);
+        }
+        console.log("---------------------------\n");
+        break;
+
+      case "clear":
+      case "cls":
+        console.clear();
+        printStartupBanner();
+        break;
+
+      case "restart":
+        console.log("[xor] Restarting monitor...");
+        rl.close();
+        process.exit(0);
+        break;
+
+      case "exit":
+      case "quit":
+        console.log("[xor] Stopping XOR WebMonitor...");
+        rl.close();
+        process.exit(0);
+        break;
+
+      default:
+        console.log(`Unknown command: "${cmd}". Type "help" for a list of commands.`);
+        break;
+    }
+
+    rl.prompt();
+  });
+}
+
 async function main() {
   loadEnv();
-  console.log("Bot main started.");
+  printStartupBanner();
 
   // Discord is optional and can be started or stopped later from the web panel.
   // "configured" means a token and channel exist; "enabled" means it is running.
@@ -4373,6 +5099,7 @@ async function main() {
       }
 
       if (control.enabled && (sendPanel ?? control.sendPanelOnStart)) {
+        await renamePanelChannel(control).catch((e) => console.error("[control]", `Rename panel channel note: ${e.message}`));
         await sendDiscordPayload(discordRuntime.token, control.channelId, controlPanelPayload(control));
       }
       const gatewayControl = { ...control, sendPanelOnStart: false };
@@ -4492,7 +5219,37 @@ async function main() {
       detectAccess: (port) => detectAccess(port),
       detectInstances: () => detectInstances(),
       detectAdbDevices: (adbPath) => detectAdbDevices(adbPath || control.adbPath),
-      applySetup: (payload) => applySetup(payload),
+      applySetup: (payload) => {
+        const result = applySetup(payload);
+        const rawLogs = String(process.env.LOG_FILES || "").trim();
+        const newLogs = rawLogs ? parseLogFiles(rawLogs) : [];
+        logs.length = 0;
+        logs.push(...newLogs);
+
+        const token = process.env.DISCORD_TOKEN;
+        const fallbackChannelId = String(process.env.DISCORD_CHANNEL_ID || "").trim();
+        const newControl = autoControlConfig(token, fallbackChannelId);
+        control.instances = newControl.instances;
+        control.enabled = newControl.enabled;
+        control.channelId = newControl.channelId;
+        control.channelName = newControl.channelName;
+        control.token = newControl.token;
+        control.ownerIds = newControl.ownerIds;
+        control.adbPath = newControl.adbPath;
+        control.emulator = newControl.emulator;
+
+        for (const log of logs) {
+          log.channelId = optionalChannelId(envKeyForLog(log.name, "CHANNEL_ID")) || fallbackChannelId;
+          log.channelBaseName =
+            process.env[envKeyForLog(log.name, "CHANNEL_NAME")] || defaultChannelName(log.name);
+          applySavedState(log, state);
+          restartLogsByKey.set(restartKeyForLog(log), log);
+        }
+
+        startMonitoringLoop();
+        webEmit({ type: "state-update" });
+        return result;
+      },
       testDiscord: (token, channelId) => testDiscord(token, channelId),
       readIncidents: (limit) => readIncidents(limit),
       incidentDir,
@@ -4545,10 +5302,12 @@ async function main() {
         }),
       sessionStats: (instance) => sessionStatsEmbed(instance),
       dailyStats: (instance) => dailyStatsEmbed(instance),
+      allTimeStats: (instance) => allTimeStatsEmbed(instance),
       // Raw numbers so the web panel can lay out Main and Builder separately
       // instead of unpacking a Discord-shaped embed.
       sessionStatsRaw: (instance) => latestSessionStats(instance),
       dailyStatsRaw: (instance) => dailyStatsFromDb(instance),
+      allTimeStatsRaw: (instance) => allTimeStatsFallback(instance),
       statusEmbed: (log) => buildStatusEmbed(log, config),
       recentLines: (log, count) => recentLogLinesText(log, count),
       logHealth: (log) => logHealthSummary(log),
@@ -4559,18 +5318,6 @@ async function main() {
     });
     webEmit = web.emit;
   }
-
-  // Spread the expensive per-instance checks (update / visual / stuck) so they
-  // do not all fire on the first tick. With several instances that would mean a
-  // burst of simultaneous PowerShell and ADB calls every cycle.
-  logs.forEach((log, index) => {
-    const offset = index * Math.max(1000, Number(process.env.CHECK_STAGGER_MS || 7000));
-    log.lastVisualCheckAt = Date.now() - config.visualCheckIntervalSeconds * 1000 + offset;
-    log.lastStuckCheckAt = Date.now() + offset;
-    log.lastAutoUpdateCheckAt = Date.now() - 30000 + offset;
-  });
-
-  logs.forEach(initializeLog);
 
   cleanupScreenshots();
   setInterval(() => cleanupScreenshots(), 30 * 60 * 1000);
@@ -4625,66 +5372,86 @@ async function main() {
     startDiscord().catch((error) => console.error("[control]", `Discord startup failed: ${error.message}`));
   }
 
-  if (!configured) {
-    console.log("Monitoring is idle until setup completes.");
-    return;
-  }
+  let monitoringStarted = false;
+  function startMonitoringLoop() {
+    if (monitoringStarted) return;
+    if (logs.length === 0 || control.instances.length === 0) return;
+    monitoringStarted = true;
 
-  console.log("Bot connected. Watching:");
-  logs.forEach((log) => console.log(`- ${log.name}: ${log.path} -> channel ${log.channelId}`));
+    // Spread the expensive per-instance checks (update / visual / stuck)
+    logs.forEach((log, index) => {
+      const offset = index * Math.max(1000, Number(process.env.CHECK_STAGGER_MS || 7000));
+      log.lastVisualCheckAt = Date.now() - config.visualCheckIntervalSeconds * 1000 + offset;
+      log.lastStuckCheckAt = Date.now() + offset;
+      log.lastAutoUpdateCheckAt = Date.now() - 30000 + offset;
+    });
 
-  // Logs are checked concurrently with a small cap. Strictly sequential checking
-  // let one instance's slow PowerShell step (the update handler waits up to
-  // 270s) block every other instance behind it — fine at two instances, not at
-  // eight.
-  const checkConcurrency = Math.max(1, Number(process.env.CHECK_CONCURRENCY || 3));
-  let checkInFlight = false;
+    logs.forEach(initializeLog);
 
-  async function checkAllLogs() {
-    // setInterval does not wait for the previous run, so without this guard slow
-    // ticks stack up and duplicate the expensive per-instance work.
-    if (checkInFlight) return;
-    checkInFlight = true;
+    console.log("Bot connected. Watching:");
+    logs.forEach((log) => console.log(`- ${log.name}: ${log.path} -> channel ${log.channelId}`));
 
-    try {
-      const queue = [...logs];
-      const workers = Array.from({ length: Math.min(checkConcurrency, queue.length) }, async () => {
-        while (queue.length) {
-          const log = queue.shift();
+    const checkConcurrency = Math.max(1, Number(process.env.CHECK_CONCURRENCY || 3));
+    let checkInFlight = false;
+
+    async function checkAllLogs() {
+      if (checkInFlight) return;
+      checkInFlight = true;
+
+      try {
+        const queue = [...logs];
+        const workers = Array.from({ length: Math.min(checkConcurrency, queue.length) }, async () => {
+          while (queue.length) {
+            const log = queue.shift();
+            try {
+              await checkLog(log, config);
+            } catch (error) {
+              console.error(`[${log.name}]`, error.message);
+            }
+          }
+        });
+        await Promise.all(workers);
+      } finally {
+        checkInFlight = false;
+      }
+    }
+
+    setInterval(checkAllLogs, config.checkIntervalSeconds * 1000);
+
+    runAutoStartSequence(logs, config).catch((error) => {
+      console.error("[autostart]", error.message);
+    });
+
+    if (config.liveLogEnabled) {
+      console.log(`Live log thread mode enabled. Interval=${config.liveLogIntervalSeconds}s. Max thread messages=${config.liveLogMaxThreadMessages}.`);
+      setInterval(async () => {
+        for (const log of logs) {
           try {
-            await checkLog(log, config);
+            await flushLiveLog(log, config);
           } catch (error) {
-            console.error(`[${log.name}]`, error.message);
+            console.error(`[${log.name}] live log`, error.message);
           }
         }
-      });
-      await Promise.all(workers);
-    } finally {
-      checkInFlight = false;
+      }, config.liveLogIntervalSeconds * 1000);
     }
   }
 
-  setInterval(checkAllLogs, config.checkIntervalSeconds * 1000);
-
-  runAutoStartSequence(logs, config).catch((error) => {
-    console.error("[autostart]", error.message);
-  });
-
-  if (config.liveLogEnabled) {
-    console.log(`Live log thread mode enabled. Interval=${config.liveLogIntervalSeconds}s. Max thread messages=${config.liveLogMaxThreadMessages}.`);
-    setInterval(async () => {
-      for (const log of logs) {
-        try {
-          await flushLiveLog(log, config);
-        } catch (error) {
-          console.error(`[${log.name}] live log`, error.message);
-        }
-      }
-    }, config.liveLogIntervalSeconds * 1000);
+  if (configured) {
+    startMonitoringLoop();
+  } else {
+    console.log("Monitoring is idle until setup completes.");
   }
+
+  startConsoleInterface(logs, control, config);
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+const RESET_FLAG_INDEX = process.argv.findIndex((arg) => arg === "--reset-password" || arg === "-r");
+if (RESET_FLAG_INDEX !== -1) {
+  const argValue = process.argv[RESET_FLAG_INDEX + 1];
+  handlePasswordResetCli(argValue);
+} else {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}

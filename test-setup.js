@@ -29,6 +29,7 @@ const mod = new Function(
   "fs",
   "path",
   [
+    grab("resolveEnvPath"),
     grab("readEnvFile"),
     grab("writeEnvFile"),
     grab("envKeyForLog"),
@@ -70,7 +71,7 @@ assert.strictEqual(env.MAIN_FARM_CHANNEL_NAME, "main-farm-log", "explicit channe
 assert.strictEqual(env.ALT_PUSH_CHANNEL_NAME, "Alt Push", "falls back to the instance name");
 
 // The control panel channel gets a name too, so it can be renamed on start.
-assert.strictEqual(env.AUTOCONTROL_CHANNEL_NAME, "NullWebMonitor Panel", "panel channel gets a default name");
+assert.strictEqual(env.AUTOCONTROL_CHANNEL_NAME, "XOR WebMonitor Panel", "panel channel gets a default name");
 
 // Secrets already in .env survive a wizard save.
 assert.strictEqual(env.DISCORD_TOKEN, "tok", "token updated");

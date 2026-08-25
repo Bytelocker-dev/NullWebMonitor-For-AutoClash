@@ -14,9 +14,13 @@ $ErrorActionPreference = "SilentlyContinue"
 function Find-Tailscale {
   $candidates = @(
     "$env:ProgramFiles\Tailscale\tailscale.exe",
-    "${env:ProgramFiles(x86)}\Tailscale\tailscale.exe"
+    "${env:ProgramFiles(x86)}\Tailscale\tailscale.exe",
+    "$env:ProgramW6432\Tailscale\tailscale.exe",
+    "$env:LocalAppData\Tailscale\tailscale.exe",
+    "$env:LocalAppData\Programs\Tailscale\tailscale.exe",
+    "$env:SystemDrive\Program Files\Tailscale\tailscale.exe"
   )
-  foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
+  foreach ($c in $candidates) { if ($c -and (Test-Path $c)) { return $c } }
   $cmd = Get-Command tailscale.exe -ErrorAction SilentlyContinue
   if ($cmd) { return $cmd.Source }
   return ""
@@ -36,6 +40,24 @@ if ($tsExe) {
     $parts = ($statusOut | Select-Object -First 1) -split '\s+'
     if ($parts.Count -ge 2) { $tsName = $parts[1] }
   }
+}
+
+# If CLI did not return an IP, query the network adapter directly
+if (-not $tsIp) {
+  $tsAdapter = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.InterfaceAlias -like "*Tailscale*" -or
+      ($_.IPAddress -like "100.*" -and [int]($_.IPAddress.Split('.')[1]) -ge 64 -and [int]($_.IPAddress.Split('.')[1]) -le 127)
+    } | Select-Object -First 1
+
+  if ($tsAdapter) {
+    $tsIp = $tsAdapter.IPAddress
+    $tsInstalled = $true
+  }
+}
+
+if (-not $tsName -and $tsIp) {
+  $tsName = $env:COMPUTERNAME.ToLower()
 }
 
 # Network profile of the Tailscale adapter decides which firewall profile the

@@ -84,8 +84,10 @@ const web = startWebServer({
   testPush: async () => { pushSent += 1; },
   sessionStats: () => ({ title: "S", description: "**1** attacks", fields: [{ name: "Gold", value: "gained **5**" }], footer: { text: "stats.db" } }),
   dailyStats: () => ({ title: "D", description: "d", fields: [], footer: { text: "x" } }),
+  allTimeStats: () => ({ title: "A", description: "a", fields: [], footer: { text: "alltime" } }),
   sessionStatsRaw: () => ({ source: "stats.db", stats: { runtime_seconds: 3600, total_attacks: 10, gold_gained: 5000, elixir_gained: 4000, dark_gained: 100, donations_completed: 3, walls_upgraded: 2, obstacles_removed: 1, upgrades_done: 1, research_done: 0, bb_attacks: 7, bb_walls_upgraded: 4, stars_0: 1, stars_1: 6, stars_2: 3, stars_3: 0 } }),
   dailyStatsRaw: () => ({ date: "2026-08-21", source: "stats.db", stats: { bb_attacks: 9, bb_walls_upgraded: 5 } }),
+  allTimeStatsRaw: () => ({ firstDate: "2026-08-01", lastDate: "2026-08-21", source: "stats.db", sessions: 42, days: 20, stats: { runtime_seconds: 72000, total_attacks: 250, gold_gained: 150000000 } }),
   statusEmbed: () => ({ title: "status", description: "", fields: [] }),
   recentLines: () => "lines",
   logHealth: () => ({ counts: { recovery: 2 }, since: Date.now(), lastHour: { errors: 1, warnings: 0, recoveries: 2 }, recent: [{ at: Date.now(), kind: "device-error", severity: "error", line: "[ADB ERROR] device offline" }] }),
@@ -122,7 +124,7 @@ setTimeout(async () => {
   check("unauthenticated /api/state is 401", r.status === 401, JSON.stringify(r.payload));
 
   r = await call("GET", "/manifest.webmanifest", null, false);
-  check("manifest served without a session", r.status === 200 && r.payload.name === "NullWebMonitor for AutoClash" && r.payload.display === "standalone", JSON.stringify(r.payload).slice(0,120));
+  check("manifest served without a session", r.status === 200 && r.payload.name === "XOR WebMonitor for AutoClash" && r.payload.display === "standalone", JSON.stringify(r.payload).slice(0,120));
 
   r = await call("GET", "/sw.js", null, false);
   check("service worker served without a session", r.status === 200 && String(r.payload).includes("fetch"), r.status);
@@ -175,7 +177,7 @@ setTimeout(async () => {
   check("config read", r.status === 200 && r.payload.env.CHECK_INTERVAL_SECONDS === "5");
 
   r = await call("GET", "/index.html");
-  check("static index served", r.status === 200 && r.payload.toString().includes("NullWebMonitor"));
+  check("static index served", r.status === 200 && r.payload.toString().includes("XOR WebMonitor"));
 
   r = await call("GET", "/../.env");
   check("path traversal blocked", r.status === 403 || r.status === 404, r.status);
@@ -198,6 +200,11 @@ setTimeout(async () => {
     r.payload.instances[0].sessionRaw.stats.bb_attacks === 7 && r.payload.instances[0].sessionRaw.stats.bb_walls_upgraded === 4);
   check("daily raw is separate from session raw",
     r.payload.instances[0].dailyRaw.stats.bb_attacks === 9 && r.payload.instances[0].dailyRaw.date === "2026-08-21");
+  check("alltime raw is aggregated across sessions",
+    r.payload.instances[0].alltimeRaw.sessions === 42 && r.payload.instances[0].alltimeRaw.stats.gold_gained === 150000000);
+
+  r = await call("GET", "/api/stats/main/alltime");
+  check("alltime stats endpoint returns embed", r.status === 200 && r.payload.embed.title === "A");
 
   // --- config editing ---
   r = await call("POST", "/api/action", { action: "launch", instanceId: "main" });

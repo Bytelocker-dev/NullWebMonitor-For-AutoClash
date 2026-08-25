@@ -52,10 +52,13 @@ if ($IntervalMinutes -lt 1 -or $IntervalMinutes -gt 60) {
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$launcher = Join-Path $root "Start NullWebMonitor.bat"
+$launcher = Join-Path $root "Start XOR WebMonitor.bat"
+if (-not (Test-Path $launcher)) {
+  $launcher = Join-Path $root "Start NullWebMonitor.bat"
+}
 
 if (-not (Test-Path $launcher)) {
-  throw "Could not find '$launcher'. Run this from the folder the launcher is in."
+  throw "Could not find launcher batch file in '$root'."
 }
 
 # cmd /c so the console window appears and behaves the same as double-clicking.
