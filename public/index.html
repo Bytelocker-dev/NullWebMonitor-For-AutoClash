@@ -64,6 +64,27 @@
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
   }
 
+  [data-theme="studio"] {
+    --bg: #141b26; --panel: #1d2535; --panel-2: #242f44; --panel-3: #2d3b55;
+    --line: #384866; --line-soft: #2e3c54;
+    --text: #f0f4f9; --muted: #9bb0cd; --dim: #7388a6;
+    --accent: #38bdf8; --accent-dim: #0284c7;
+  }
+
+  [data-theme="neon"] {
+    --bg: #090c12; --panel: #111722; --panel-2: #182030; --panel-3: #212c42;
+    --line: #2b3952; --line-soft: #1e283b;
+    --text: #f3f7fc; --muted: #8ea3c4; --dim: #5c7091;
+    --accent: #00f0ff; --accent-dim: #00a8b3;
+    --ok: #00e5a3;
+  }
+
+  .coc-icon { vertical-align: middle; display: inline-block; flex-shrink: 0; }
+  .raid-card { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: var(--r-sm); margin-top: 8px; font-size: 13px; }
+  .raid-stars { display: inline-flex; align-items: center; gap: 2px; }
+  .touch-ripple { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; background: rgba(0, 240, 255, 0.4); border: 2px solid #00f0ff; pointer-events: none; animation: rippleAnim .5s ease-out forwards; z-index: 10; }
+  @keyframes rippleAnim { 0% { transform: scale(0.4); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
+
   /* Switch toggle */
   .switch-row {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -403,7 +424,7 @@
   .stat b + .rate { margin-top: 2px; }
 
   .starrow { display: flex; align-items: center; gap: 9px; margin-top: 5px; }
-  .starlabel { font-size: 12px; color: var(--muted); width: 22px; flex: none; }
+  .starlabel { font-size: 12px; color: var(--muted); min-width: 48px; width: 48px; display: inline-flex; align-items: center; gap: 2px; flex: none; }
   .starbar {
     flex: 1; height: 7px; border-radius: 4px; background: var(--panel-2);
     overflow: hidden; min-width: 40px;
@@ -519,6 +540,11 @@
     <span class="dot" id="liveDot" title="Live connection"></span>
     <img src="/favicon.png" alt="XOR" style="width:22px;height:22px;border-radius:4px;vertical-align:middle">
     <h1>XOR WebMonitor</h1>
+    <select id="themeSelector" class="sub tiny" style="background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:auto;margin-right:8px;font-size:12px">
+      <option value="dark">Stealth Slate</option>
+      <option value="studio">Studio Slate</option>
+      <option value="neon">Cyber Neon</option>
+    </select>
     <button class="btn sm ghost" id="logout">Sign out</button>
   </header>
 
@@ -552,17 +578,29 @@
 
     <section id="tab-live" hidden>
       <div class="card">
-        <h2>Live view <span class="spacer"></span>
-          <span class="seg" id="liveRate">
-            <button data-rate="1000">1s</button>
-            <button data-rate="2000" class="on">2s</button>
-            <button data-rate="5000">5s</button>
+        <h2>Live View <span class="spacer"></span>
+          <span class="seg" id="liveMode">
+            <button data-mode="saver" class="on">🌱 Data Saver</button>
+            <button data-mode="stream">⚡ Ultra-Live</button>
+          </span>
+          <span class="seg" id="liveRate" style="margin-left:6px">
+            <button data-rate="16" data-for="stream" style="display:none">Max Speed</button>
+            <button data-rate="200" data-for="stream" style="display:none">5 FPS</button>
+            <button data-rate="500" data-for="stream" style="display:none">2 FPS</button>
+            <button data-rate="1000" data-for="saver">1s</button>
+            <button data-rate="2000" data-for="saver" class="on">2s</button>
+            <button data-rate="5000" data-for="saver">5s</button>
             <button data-rate="0">Pause</button>
           </span>
         </h2>
-        <div class="sub">Streams downscaled screenshots every two seconds. Tap anywhere on the screen to click in-game.</div>
-        <div class="btn-row" style="margin-top:12px">
-          <button class="btn sm" id="tapToggle">Tap mode: off</button>
+        <div class="sub">Monitor emulators in real time. Switch between Data Saver (bandwidth friendly) and Ultra-Live Stream.</div>
+        <div class="btn-row" style="margin-top:12px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
+          <button class="btn sm" id="tapToggle">Touch & Drag: off</button>
+          <span class="sub tiny" style="color:var(--muted)">| Quick ADB:</span>
+          <button class="btn sm ghost" data-adb="restart-clash">🔄 Restart Clash</button>
+          <button class="btn sm ghost" data-adb="clear-cache">🧹 Clear Cache</button>
+          <button class="btn sm ghost" data-adb="fix-resolution">📐 1600x900@300DPI</button>
+          <button class="btn sm ghost" data-adb="reconnect-adb">🔌 Reconnect ADB</button>
         </div>
       </div>
       <div class="screens" id="screens" style="margin-top:14px"></div>
@@ -579,11 +617,16 @@
             <button data-range="alltime">All-Time</button>
           </span>
         </h2>
-        <div class="sub">Aggregated from session logs and stats.db. Refreshes every 15 seconds.</div>
+        <div class="sub">Session totals come from AutoClash's active run. Daily totals aggregate across restarts.</div>
       </div>
-      <div id="statsOut" class="grid"></div>
-      <div class="card">
-        <h2>Trends<span class="spacer"></span><span class="sub tiny">last 14 days</span></h2>
+      <div class="grid" id="statsOut" style="margin-top:14px"></div>
+      <div class="card" id="recentRaidsCard" style="margin-top:14px">
+        <h2><img src="/assets/coc/sword.svg" class="coc-icon" width="20" height="20" style="margin-right:6px">Recent Raids & Battles</h2>
+        <div class="sub">Latest battle results from Home Village and Builder Base.</div>
+        <div id="recentRaidsOut" style="margin-top:12px"></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h2>Trends & History<span class="spacer"></span><span class="sub tiny">14 days</span></h2>
         <div class="sub">Per-day totals and per-session rates from stats.db history.</div>
         <div id="chartsOut"></div>
       </div>
@@ -1065,12 +1108,17 @@ function render() {
   $("#instances").innerHTML = state.instances.map((i) => {
     let accountBadge = "";
     if (i.run?.account) {
+      const thMatch = String(i.run.thLevel || "").match(/\d+/);
+      const thNum = thMatch ? thMatch[0] : "";
+      const thSvg = thNum ? `/assets/coc/th${thNum}.svg` : "";
+      const thImg = thSvg ? `<img src="${thSvg}" class="coc-icon" width="20" height="20" alt="${esc(i.run.thLevel)}" title="${esc(i.run.thLevel)}">` : "";
+
       accountBadge = `
         <div style="display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:6px;background:var(--panel-2);border:1px solid var(--line-soft);border-radius:var(--r-sm);padding:4px 8px;font-size:12.5px">
-          <span>🏰 <b>${esc(i.run.account)}</b></span>
-          ${i.run.thLevel ? `<span class="pill" style="font-size:11px;padding:1px 6px">${esc(i.run.thLevel)}</span>` : ""}
+          <span style="display:inline-flex;align-items:center;gap:4px"><img src="/assets/coc/sword.svg" class="coc-icon" width="14" height="14"><b>${esc(i.run.account)}</b></span>
+          ${thImg}
           ${i.run.multiVillage?.enabled && i.run.running && (i.run.multiVillage.switchDueAt || i.run.multiVillage.remainingText) ? `
-            <span class="mv-timer" data-due="${i.run.multiVillage.switchDueAt || 0}" style="color:var(--accent);font-weight:500">⏳ ${esc(i.run.multiVillage.remainingText || "calculating...")}</span>
+            <span class="mv-timer" data-due="${i.run.multiVillage.switchDueAt || 0}" style="color:var(--accent);font-weight:600">⏳ ${esc(i.run.multiVillage.remainingText || "calculating...")}</span>
             ${i.run.multiVillage.nextAccount ? `<span class="sub tiny" style="color:var(--muted)">→ Next: ${esc(i.run.multiVillage.nextAccount)}</span>` : ""}
           ` : ""}
         </div>
@@ -1108,6 +1156,8 @@ function render() {
     if (notes) notes.innerHTML = breakBanner(log) + backoffBanner(log);
     const health = $(`[data-loghealth="${CSS.escape(log.name)}"]`);
     if (health) health.innerHTML = healthHtml(log);
+    const ver = $(`[data-logver="${CSS.escape(log.name)}"]`);
+    if (ver) ver.textContent = log.version || "";
     // Seed the buffer from the server's recent lines the first time we see a log.
     if (!logBuffers.has(log.name) && log.recentLines.length) {
       logBuffers.set(log.name, log.recentLines.map((line) => `<span class="t">--:--:--</span> ${esc(line)}`).join("\n"));
@@ -1124,41 +1174,79 @@ function render() {
       ${state.autoUpdateEnabled ? "auto-update is on, the bot is handling it." : "auto-update is off. Use Check for update on that window."}</div>`;
   }
 
-  if (!$("#screens").children.length) renderScreenCards();
+  renderScreens();
 }
 
 // ---------- live view ----------
 
-function renderScreenCards() {
-  $("#screens").innerHTML = state.instances.map((i) => `
-    <div class="screen-card" data-screen="${esc(i.id)}">
-      <div class="screen-head">
-        <span class="dot idle"></span><b>${esc(i.label)}</b>
-        <span class="spacer"></span>
-        <span class="sub tiny" data-fps></span>
-      </div>
-      <div class="screen-body${tapMode ? " tappable" : ""}"><div class="msg">Waiting for first frame...</div></div>
-      <div class="screen-foot">
-        <button class="btn sm" data-shot="${esc(i.id)}">Full resolution</button>
-      </div>
-    </div>`).join("");
+function renderScreens() {
+  const container = $("#screens");
+  if (!container) return;
+  if (!state.instances.length) {
+    container.innerHTML = `<div class="card sub">No instances configured yet.</div>`;
+    return;
+  }
+
+  const existing = new Set(Array.from(container.children).map((c) => c.dataset.screen));
+  const current = new Set(state.instances.map((i) => i.id));
+  for (const el of Array.from(container.children)) {
+    if (!current.has(el.dataset.screen)) el.remove();
+  }
+
+  for (const instance of state.instances) {
+    let card = container.querySelector(`[data-screen="${CSS.escape(instance.id)}"]`);
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "screen-card";
+      card.dataset.screen = instance.id;
+      card.innerHTML = `
+        <div class="screen-head">
+          <span class="dot idle"></span>
+          <span>${esc(instance.label)}</span>
+          <span class="sub tiny" data-fps>connecting...</span>
+          <button class="btn sm ghost" data-snap="${esc(instance.id)}" style="margin-left:auto;padding:2px 8px;font-size:11px">Snapshot</button>
+        </div>
+        <div class="screen-body ${tapMode ? "tappable" : ""}">
+          <div class="msg">Waiting for frame...</div>
+        </div>`;
+      container.appendChild(card);
+    }
+  }
 }
 
 async function grabFrame(instanceId) {
   const card = $(`[data-screen="${CSS.escape(instanceId)}"]`);
   if (!card) return;
   try {
-    const res = await api(`/api/live/${encodeURIComponent(instanceId)}?t=${Date.now()}`);
+    const endpoint = liveStreamMode === "stream" ? `/api/live/${encodeURIComponent(instanceId)}` : `/api/screen/${encodeURIComponent(instanceId)}`;
+    const res = await fetch(`${endpoint}?t=${Date.now()}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
     const blob = await res.blob();
-    const body = card.querySelector(".screen-body");
     const url = URL.createObjectURL(blob);
-    let img = body.querySelector("img");
-    if (!img) { body.innerHTML = ""; img = document.createElement("img"); body.appendChild(img); }
+    let img = card.querySelector(".screen-body img");
+    if (!img) {
+      const body = card.querySelector(".screen-body");
+      body.innerHTML = `<img alt="Emulator screen">`;
+      img = body.querySelector("img");
+    }
     const previous = img.src;
     img.src = url;
     if (previous.startsWith("blob:")) URL.revokeObjectURL(previous);
     card.querySelector(".dot").classList.replace("idle", "on");
-    card.dataset.frameAt = String(Date.now());
+
+    const now = Date.now();
+    const prevAt = Number(card.dataset.frameAt || 0);
+    if (prevAt > 0) {
+      const delta = now - prevAt;
+      if (delta > 0) {
+        const fps = (1000 / delta).toFixed(1);
+        card.dataset.fps = fps;
+      }
+    }
+    card.dataset.frameAt = String(now);
     card.dataset.frameSize = String(Math.round(blob.size / 1024));
     paintFrameAge(card);
   } catch (error) {
@@ -1168,31 +1256,70 @@ async function grabFrame(instanceId) {
   }
 }
 
-// Each instance polls on its own loop so a slow capture cannot stall the other.
+let liveStreamMode = "saver";
+let savedStreamRate = 16;
+let savedSaverRate = 2000;
+
+function updateLiveControls() {
+  const isStream = liveStreamMode === "stream";
+  $$('#liveRate [data-for="stream"]').forEach((b) => b.style.display = isStream ? "" : "none");
+  $$('#liveRate [data-for="saver"]').forEach((b) => b.style.display = isStream ? "none" : "");
+
+  liveRate = isStream ? savedStreamRate : savedSaverRate;
+  $$("#liveRate button").forEach((b) => {
+    const rate = Number(b.dataset.rate);
+    const matchesMode = isStream ? (b.dataset.for === "stream" || rate === 0) : (b.dataset.for === "saver" || rate === 0);
+    b.classList.toggle("on", matchesMode && rate === liveRate);
+  });
+}
+
 function startLive() {
   stopLive();
-  if (!liveRate) return;
+  if (liveRate === 0) return; // Paused
   for (const instance of state.instances) {
     const loop = async () => {
-      if (activeTab !== "live" || document.hidden) return;
+      if (activeTab !== "live" || document.hidden || liveRate === 0) return;
       await grabFrame(instance.id);
-      if (liveTimers.has(instance.id)) liveTimers.set(instance.id, setTimeout(loop, liveRate));
+      if (liveTimers.has(instance.id) && liveRate > 0) {
+        liveTimers.set(instance.id, setTimeout(loop, liveRate));
+      }
     };
     liveTimers.set(instance.id, setTimeout(loop, 0));
   }
 }
 
-// Ticks on its own so the age keeps counting up even when captures are off
-// or failing, which is exactly when a stale picture is most misleading.
+function stopLive() {
+  for (const timer of liveTimers.values()) clearTimeout(timer);
+  liveTimers.clear();
+}
+
 function paintFrameAge(card) {
   const label = card.querySelector("[data-fps]");
   if (!label) return;
   const at = Number(card.dataset.frameAt || 0);
-  if (!at) { label.textContent = "no frame yet"; return; }
+  if (!at) { label.textContent = "connecting..."; return; }
   const seconds = Math.round((Date.now() - at) / 1000);
-  const age = seconds < 1 ? "just now" : seconds < 60 ? seconds + "s ago" : Math.floor(seconds / 60) + "m ago";
-  label.textContent = age + " · " + (card.dataset.frameSize || "0") + " KB";
-  label.classList.toggle("stale", seconds > 30);
+  const size = card.dataset.frameSize ? `${card.dataset.frameSize} KB` : "0 KB";
+
+  if (liveRate === 0) {
+    label.textContent = `Paused · ${size}`;
+    label.classList.remove("stale");
+    return;
+  }
+
+  let rateText = "";
+  if (card.dataset.fps && Number(card.dataset.fps) > 0 && seconds <= 3) {
+    rateText = `${card.dataset.fps} FPS`;
+  } else if (seconds < 1) {
+    rateText = liveStreamMode === "stream" ? "Live" : "just now";
+  } else if (seconds < 60) {
+    rateText = `${seconds}s ago`;
+  } else {
+    rateText = `${Math.floor(seconds / 60)}m ago`;
+  }
+
+  label.textContent = `${rateText} · ${size}`;
+  label.classList.toggle("stale", seconds > 15);
 }
 
 setInterval(() => {
@@ -1200,8 +1327,6 @@ setInterval(() => {
   document.querySelectorAll("[data-screen]").forEach(paintFrameAge);
 }, 1000);
 
-// The wizard already works out how this machine is reachable; the panel just
-// never showed it again afterwards, which is when you actually want it.
 let accessChoice = 0;
 
 async function loadAccess() {
@@ -1247,36 +1372,79 @@ async function loadAccess() {
   }
 }
 
-function stopLive() {
-  for (const timer of liveTimers.values()) clearTimeout(timer);
-  liveTimers.clear();
+// Theme handling
+const savedTheme = localStorage.getItem("xor-theme") || "dark";
+document.body.setAttribute("data-theme", savedTheme);
+const themeSel = $("#themeSelector");
+if (themeSel) {
+  themeSel.value = savedTheme;
+  themeSel.addEventListener("change", (e) => {
+    document.body.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("xor-theme", e.target.value);
+  });
 }
+
+$("#liveMode")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  $$("#liveMode button").forEach((b) => b.classList.toggle("on", b === button));
+  liveStreamMode = button.dataset.mode || "saver";
+  updateLiveControls();
+  if (activeTab === "live") startLive();
+});
 
 $("#liveRate")?.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   $$("#liveRate button").forEach((b) => b.classList.toggle("on", b === button));
   liveRate = Number(button.dataset.rate);
-  if (activeTab === "live") startLive();
+  if (liveStreamMode === "stream") {
+    savedStreamRate = liveRate;
+  } else {
+    savedSaverRate = liveRate;
+  }
+  if (liveRate === 0) {
+    stopLive();
+    document.querySelectorAll("[data-screen]").forEach(paintFrameAge);
+  } else if (activeTab === "live") {
+    startLive();
+  }
 });
+updateLiveControls();
 
 $("#tapToggle")?.addEventListener("click", (event) => {
   tapMode = !tapMode;
-  event.target.textContent = `Tap mode: ${tapMode ? "on" : "off"}`;
+  event.target.textContent = `Touch & Drag: ${tapMode ? "on" : "off"}`;
   event.target.classList.toggle("bad", tapMode);
   $$(".screen-body").forEach((body) => body.classList.toggle("tappable", tapMode));
 });
 
-// Click position -> emulator tap. The image uses object-fit: contain, so the
-// letterboxed bars have to be subtracted before working out the ratio.
-$("#screens")?.addEventListener("click", async (event) => {
-  if (!tapMode) return;
-  const img = event.target.closest(".screen-body img");
-  if (!img) return;
+// Quick ADB Actions
+document.addEventListener("click", async (event) => {
+  const adbBtn = event.target.closest("[data-adb]");
+  if (!adbBtn) return;
+  const action = adbBtn.dataset.adb;
+  if (!state?.instances?.length) return toast("No instance available.", true);
+  const instanceId = state.instances[0].id;
+  try {
+    adbBtn.disabled = true;
+    toast(`Running ${action}...`);
+    const res = await post("/api/adb-action", { instanceId, action });
+    toast(res.output || "Action complete.");
+    setTimeout(() => grabFrame(instanceId), 1000);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    adbBtn.disabled = false;
+  }
+});
 
-  const instanceId = img.closest("[data-screen]").dataset.screen;
+// Interactive Touch & Drag Swipe Controller
+let touchStartData = null;
+
+function computeRatioCoords(img, clientX, clientY) {
   const box = img.getBoundingClientRect();
-  const natural = img.naturalWidth / img.naturalHeight;
+  const natural = img.naturalWidth / img.naturalHeight || (16 / 9);
   const shown = box.width / box.height;
 
   let drawnW = box.width;
@@ -1286,14 +1454,49 @@ $("#screens")?.addEventListener("click", async (event) => {
 
   const offsetX = (box.width - drawnW) / 2;
   const offsetY = (box.height - drawnH) / 2;
-  const x = (event.clientX - box.left - offsetX) / drawnW;
-  const y = (event.clientY - box.top - offsetY) / drawnH;
-  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  const x = (clientX - box.left - offsetX) / drawnW;
+  const y = (clientY - box.top - offsetY) / drawnH;
+  return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+}
+
+function showTouchRipple(x, y) {
+  const ripple = document.createElement("div");
+  ripple.className = "touch-ripple";
+  ripple.style.left = `${x}px`;
+  ripple.style.top = `${y}px`;
+  document.body.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 500);
+}
+
+$("#screens")?.addEventListener("mousedown", (e) => {
+  if (!tapMode) return;
+  const img = e.target.closest(".screen-body img");
+  if (!img) return;
+  const instanceId = img.closest("[data-screen]").dataset.screen;
+  const coords = computeRatioCoords(img, e.clientX, e.clientY);
+  touchStartData = { instanceId, img, startClientX: e.clientX, startClientY: e.clientY, startX: coords.x, startY: coords.y, time: Date.now() };
+});
+
+$("#screens")?.addEventListener("mouseup", async (e) => {
+  if (!tapMode || !touchStartData) return;
+  const { instanceId, img, startClientX, startClientY, startX, startY, time } = touchStartData;
+  touchStartData = null;
+
+  const endCoords = computeRatioCoords(img, e.clientX, e.clientY);
+  const dist = Math.hypot(e.clientX - startClientX, e.clientY - startClientY);
+  const duration = Math.min(1000, Math.max(100, Date.now() - time));
+
+  showTouchRipple(e.clientX, e.clientY);
 
   try {
-    const result = await post("/api/tap", { instanceId, x, y });
-    toast(result.output);
-    setTimeout(() => grabFrame(instanceId), 700);
+    if (dist > 15) {
+      const result = await post("/api/swipe", { instanceId, x1: startX, y1: startY, x2: endCoords.x, y2: endCoords.y, duration });
+      toast(result.output || "Swipe executed.");
+    } else {
+      const result = await post("/api/tap", { instanceId, x: startX, y: startY });
+      toast(result.output || "Tap executed.");
+    }
+    setTimeout(() => grabFrame(instanceId), 600);
   } catch (error) {
     toast(error.message, true);
   }
@@ -1305,6 +1508,54 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // ---------- stats ----------
+
+async function loadRecentRaids() {
+  const container = $("#recentRaidsOut");
+  if (!container || !state?.instances?.length) return;
+
+  try {
+    const allRaids = [];
+    for (const inst of state.instances) {
+      const res = await api(`/api/raids/${encodeURIComponent(inst.id)}?limit=10`);
+      if (res.raids) {
+        res.raids.forEach((r) => allRaids.push({ ...r, instanceLabel: inst.label }));
+      }
+    }
+
+    if (!allRaids.length) {
+      container.innerHTML = '<div class="sub tiny">No recent battle logs detected yet.</div>';
+      return;
+    }
+
+    container.innerHTML = allRaids.slice(0, 15).map((r) => {
+      const isBuilder = r.village === "builder";
+      const badge = isBuilder
+        ? '<img src="/assets/coc/bh10.svg" class="coc-icon" width="22" height="22" alt="Builder Base">'
+        : (r.thLevel ? `<img src="/assets/coc/${r.thLevel.toLowerCase()}.svg" class="coc-icon" width="22" height="22" alt="${esc(r.thLevel)}">` : '<img src="/assets/coc/th17.svg" class="coc-icon" width="22" height="22" alt="Home Village">');
+
+      const starImgs = Array.from({ length: r.stars || 0 }, () => '<img src="/assets/coc/star_full.svg" class="coc-icon" width="13" height="13">').join("")
+        + Array.from({ length: Math.max(0, 3 - (r.stars || 0)) }, () => '<img src="/assets/coc/star_empty.svg" class="coc-icon" width="13" height="13">').join("");
+
+      return `
+        <div class="raid-card">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${badge}
+            <div>
+              <div style="font-weight:600;display:flex;align-items:center;gap:6px">
+                ${esc(r.instanceLabel)} · ${isBuilder ? "Builder Base" : "Home Village"}
+                <span class="raid-stars">${starImgs}</span>
+              </div>
+              <div class="sub tiny">${r.time ? esc(r.time) : "Recent raid"} ${r.army ? `· ${esc(r.army)}` : ""}</div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <span class="pill sm" style="font-size:11px">${isBuilder ? "Builder" : (r.thLevel || "Attack")}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch {}
+}
 
 async function loadStats() {
   try {
@@ -1330,13 +1581,12 @@ async function loadStats() {
         ${raw ? `<div class="sub tiny" style="margin-top:12px">Source: ${esc(raw.source || "stats.db")}${embed ? "" : ""}</div>` : ""}
       </div>`;
     }).join("");
+    loadRecentRaids();
   } catch (error) {
     if (error.message !== "Signed out.") $("#statsOut").innerHTML = `<div class="card sub">${esc(error.message)}</div>`;
   }
 }
 
-// Main base and builder base are separate games with separate numbers, so they
-// get separate sections rather than one flat grid.
 function statsBody(raw, range) {
   const s = raw.stats || {};
   const runtime = Number(s.runtime_seconds || 0);
@@ -1344,8 +1594,6 @@ function statsBody(raw, range) {
   const rate = (value) => (hours >= 0.1 && Number(value) ? `<span class="rate">${compact(Number(value) / hours)}/h</span>` : "");
   const num = (value) => fmt(Number(value || 0));
 
-  // total_attacks counts main-base attacks only: stars_0..3 sums to it, while
-  // bb_attacks is tracked separately.
   const mainAttacks = Number(s.total_attacks || 0);
   const attackRate = hours >= 0.1 && mainAttacks ? ` · ${(mainAttacks / hours).toFixed(1)}/h` : "";
   const sessions = Number(raw.sessions || 0);
@@ -1360,13 +1608,13 @@ function statsBody(raw, range) {
   }
 
   const main = `
-    <div class="base-head">🏰 Main Base</div>
+    <div class="base-head" style="display:flex;align-items:center;gap:6px"><img src="/assets/coc/th17.svg" class="coc-icon" width="18" height="18">Main Base</div>
     <div class="sub tiny">${header} · <strong>${num(mainAttacks)}</strong> attacks${attackRate}</div>
     <div class="stats">
-      <div class="stat"><b>Gold</b>${compact(s.gold_gained)}${rate(s.gold_gained)}</div>
-      <div class="stat"><b>Elixir</b>${compact(s.elixir_gained)}${rate(s.elixir_gained)}</div>
-      <div class="stat"><b>Dark</b>${compact(s.dark_gained)}${rate(s.dark_gained)}</div>
-      <div class="stat"><b>Donations</b>${num(s.donations_completed)}</div>
+      <div class="stat"><b><img src="/assets/coc/gold.svg" class="coc-icon" width="14" height="14" style="margin-right:4px">Gold</b>${compact(s.gold_gained)}${rate(s.gold_gained)}</div>
+      <div class="stat"><b><img src="/assets/coc/elixir.svg" class="coc-icon" width="14" height="14" style="margin-right:4px">Elixir</b>${compact(s.elixir_gained)}${rate(s.elixir_gained)}</div>
+      <div class="stat"><b><img src="/assets/coc/dark_elixir.svg" class="coc-icon" width="14" height="14" style="margin-right:4px">Dark</b>${compact(s.dark_gained)}${rate(s.dark_gained)}</div>
+      <div class="stat"><b><img src="/assets/coc/shield.svg" class="coc-icon" width="14" height="14" style="margin-right:4px">Donations</b>${num(s.donations_completed)}</div>
       <div class="stat"><b>Walls</b>${num(s.walls_upgraded)}</div>
       <div class="stat"><b>Obstacles</b>${num(s.obstacles_removed)}</div>
       <div class="stat"><b>Upgrades</b>${num(s.upgrades_done)}</div>
@@ -1376,24 +1624,25 @@ function statsBody(raw, range) {
     ${starsHtml(s)}`;
 
   const builder = `
-    <div class="base-head builder">🔨 Builder Base</div>
+    <div class="base-head builder" style="display:flex;align-items:center;gap:6px"><img src="/assets/coc/bh10.svg" class="coc-icon" width="18" height="18">Builder Base</div>
     <div class="stats">
-      <div class="stat"><b>Attacks</b>${num(s.bb_attacks)}</div>
+      <div class="stat"><b><img src="/assets/coc/sword.svg" class="coc-icon" width="14" height="14" style="margin-right:4px">Attacks</b>${num(s.bb_attacks)}</div>
       <div class="stat"><b>Walls</b>${num(s.bb_walls_upgraded)}</div>
     </div>`;
 
   return main + builder;
 }
 
-// Star spread as bars, same idea as the Discord embed.
 function starsHtml(s) {
   const counts = [s.stars_0, s.stars_1, s.stars_2, s.stars_3].map((v) => Number(v || 0));
   const total = counts.reduce((sum, v) => sum + v, 0);
   if (!total) return `<div class="sub tiny">No attacks recorded.</div>`;
   return counts.map((value, index) => {
     const percent = Math.round((value / total) * 100);
-    return `<div class="starrow">
-      <span class="starlabel">${index}★</span>
+    const starImgs = Array.from({ length: index }, () => '<img src="/assets/coc/star_full.svg" class="coc-icon" width="12" height="12">').join("")
+      + Array.from({ length: Math.max(0, 3 - index) }, () => '<img src="/assets/coc/star_empty.svg" class="coc-icon" width="12" height="12">').join("");
+    return `<div class="starrow" style="display:flex;align-items:center;gap:6px">
+      <span class="starlabel" style="display:inline-flex;align-items:center;gap:2px">${starImgs}</span>
       <span class="starbar"><i style="width:${percent}%"></i></span>
       <span class="starval">${fmt(value)} <span class="sub tiny">(${percent}%)</span></span>
     </div>`;
@@ -1415,6 +1664,7 @@ $("#statsRange")?.addEventListener("click", (event) => {
   $$("#statsRange button").forEach((b) => b.classList.toggle("on", b === button));
   statsRange = button.dataset.range;
   loadStats();
+  loadCharts();
 });
 
 // ---------- log health ----------
@@ -1498,6 +1748,9 @@ function compact(value) {
 }
 
 async function loadCharts() {
+  const container = $("#chartsOut");
+  if (!container || !state?.instances?.length) return;
+
   const blocks = [];
   for (const instance of state.instances) {
     try {
@@ -1505,41 +1758,74 @@ async function loadCharts() {
       const days = history.days || [];
       const sessions = history.sessions || [];
 
-      const daily = lineChart([
-        { name: "Gold", color: "#f0c650", values: days.map((d) => d.gold_gained) },
-        { name: "Elixir", color: "#c77dff", values: days.map((d) => d.elixir_gained) },
-        { name: "Dark", color: "#8b9ab0", values: days.map((d) => d.dark_gained) },
-      ], { labels: days.map((d) => String(d.date).slice(5)) });
-
       const sessionLabels = sessions.map((x) => {
-        // stats.db timestamps are seconds in some rows, milliseconds in others.
         const ms = Number(x.at) > 1e11 ? Number(x.at) : Number(x.at) * 1000;
         return Number.isFinite(ms) && ms > 0 ? new Date(ms).toLocaleDateString([], { month: "numeric", day: "numeric" }) : "";
       });
 
-      // Loot rates and attack rates live on wildly different scales, so they
-      // get their own axes rather than one squashing the other flat.
-      const lootRate = lineChart([
-        { name: "Gold/h", color: "#f0c650", values: sessions.map((x) => x.goldPerHour) },
-        { name: "Elixir/h", color: "#c77dff", values: sessions.map((x) => x.elixirPerHour) },
-        { name: "Dark/h", color: "#8b9ab0", values: sessions.map((x) => x.darkPerHour) },
-      ], { labels: sessionLabels, height: 150 });
+      if (statsRange === "session") {
+        const lootRate = lineChart([
+          { name: "Gold/h", color: "#f0c650", values: sessions.map((x) => x.goldPerHour) },
+          { name: "Elixir/h", color: "#c77dff", values: sessions.map((x) => x.elixirPerHour) },
+          { name: "Dark/h", color: "#8b9ab0", values: sessions.map((x) => x.darkPerHour) },
+        ], { labels: sessionLabels, height: 150 });
 
-      const attackRate = lineChart([
-        { name: "Attacks/h", color: "#4c8dff", values: sessions.map((x) => x.attacksPerHour) },
-      ], { labels: sessionLabels, height: 120 });
+        const attackRate = lineChart([
+          { name: "Attacks/h", color: "#4c8dff", values: sessions.map((x) => x.attacksPerHour) },
+        ], { labels: sessionLabels, height: 120 });
 
-      blocks.push(`<div style="margin-top:18px">
-        <div class="sub" style="font-weight:600;color:var(--text)">${esc(instance.label)}</div>
-        <div class="sub tiny" style="margin-top:8px">Daily loot</div>${daily}
-        <div class="sub tiny" style="margin-top:14px">Loot per hour, by session</div>${lootRate}
-        <div class="sub tiny" style="margin-top:14px">Attacks per hour, by session</div>${attackRate}
-      </div>`);
+        blocks.push(`<div style="margin-top:18px">
+          <div class="sub" style="font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px">
+            <img src="/assets/coc/sword.svg" class="coc-icon" width="16" height="16">${esc(instance.label)}
+            <span class="pill sm">Session Rates</span>
+          </div>
+          <div class="sub tiny" style="margin-top:10px">Loot per hour, by session</div>${lootRate}
+          <div class="sub tiny" style="margin-top:14px">Attacks per hour, by session</div>${attackRate}
+        </div>`);
+      } else if (statsRange === "alltime") {
+        // Cumulative lifetime progression
+        let cumGold = 0, cumElixir = 0, cumDark = 0;
+        const cumDays = days.map((d) => {
+          cumGold += Number(d.gold_gained || 0);
+          cumElixir += Number(d.elixir_gained || 0);
+          cumDark += Number(d.dark_gained || 0);
+          return { date: d.date, cumGold, cumElixir, cumDark };
+        });
+
+        const cumChart = lineChart([
+          { name: "Cumulative Gold", color: "#f0c650", values: cumDays.map((d) => d.cumGold) },
+          { name: "Cumulative Elixir", color: "#c77dff", values: cumDays.map((d) => d.cumElixir) },
+          { name: "Cumulative Dark", color: "#8b9ab0", values: cumDays.map((d) => d.cumDark) },
+        ], { labels: cumDays.map((d) => String(d.date).slice(5)), height: 160 });
+
+        blocks.push(`<div style="margin-top:18px">
+          <div class="sub" style="font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px">
+            <img src="/assets/coc/gold.svg" class="coc-icon" width="16" height="16">${esc(instance.label)}
+            <span class="pill sm">Lifetime Progression</span>
+          </div>
+          <div class="sub tiny" style="margin-top:10px">Cumulative lifetime resource farming</div>${cumChart}
+        </div>`);
+      } else {
+        // Daily breakdown
+        const daily = lineChart([
+          { name: "Gold", color: "#f0c650", values: days.map((d) => d.gold_gained) },
+          { name: "Elixir", color: "#c77dff", values: days.map((d) => d.elixir_gained) },
+          { name: "Dark", color: "#8b9ab0", values: days.map((d) => d.dark_gained) },
+        ], { labels: days.map((d) => String(d.date).slice(5)) });
+
+        blocks.push(`<div style="margin-top:18px">
+          <div class="sub" style="font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px">
+            <img src="/assets/coc/th17.svg" class="coc-icon" width="16" height="16">${esc(instance.label)}
+            <span class="pill sm">Daily Trends</span>
+          </div>
+          <div class="sub tiny" style="margin-top:10px">Daily loot (last 14 days)</div>${daily}
+        </div>`);
+      }
     } catch (error) {
       blocks.push(`<div class="sub tiny" style="margin-top:14px">${esc(instance.label)}: ${esc(error.message)}</div>`);
     }
   }
-  $("#chartsOut").innerHTML = blocks.join("");
+  container.innerHTML = blocks.join("") || '<div class="sub tiny">No historical chart data found yet.</div>';
 }
 
 // ---------- daily summary ----------

@@ -20,35 +20,38 @@ Watch and control all your Clash of Clans bots from your phone — live emulator
 
 ---
 
-## 🌟 100% Free & Open Source
+## Open Source & Community
 
-XOR WebMonitor is **free, open-source software** under the MIT License.  
-We built this to give the Clash of Clans community the best possible self-hosted monitoring and control experience.
-- ⭐️ **Star the repository** if you find it helpful!
-- 🍴 **Fork it & customize** to suit your personal setup or bot farm.
-- 🤝 **Contribute!** Pull requests, bug reports, and new feature ideas are always welcome.
+XOR WebMonitor is **free, open-source software** released under the permissive MIT License.  
+Built to provide the Clash of Clans community with an enterprise-grade, self-hosted web control panel and mobile monitor.
+
+* **Star the repository** if you find it helpful!
+* **Fork & customize** to suit your personal setup or bot farm.
+* **Contribute!** Pull requests, bug reports, and new feature ideas are always welcome.
 
 ---
 
-## ✨ Features at a Glance
+## Core Capabilities & Features
 
 | Feature | Description |
 |---|---|
-| 🎮 **Remote Control** | Start, pause, stop, launch, and close AutoClash and your emulators (MuMu / LDPlayer) — per window or across all instances at once. |
-| 📊 **All-Time & Daily Stats** | Switch between **Session**, **Daily**, and **All-Time** statistics straight from `stats.db` — tracks lifetime Gold, Elixir, Dark Elixir, walls, obstacles, upgrades, and 14-day trending charts. |
-| 🏰 **Multi-Village Rotation** | Live tracking of the currently active account, detected Town Hall badge (`TH18`), live rotation countdown (`20:56 left`), and next account indicator (`→ Next: AltVillage`). |
-| 📺 **Live View & Tap Mode** | Real-time lightweight emulator screens streamed to your phone. Enable **Tap mode** to click or tap on the game screen directly from your browser. |
-| 💻 **Interactive CLI Terminal** | Clean, isolated `xor>` command prompt in the terminal to inspect `status`, `stats`, `instances`, `restart`, or `reset-password` without interruption from bot logs. |
-| 🪵 **Live Multi-Tab Logs** | Real-time logs for every instance with auto-scroll, search, and a 1-hour health monitor bar showing errors, warnings, and recoveries. |
-| 📸 **Visual Incident Logger** | Automatic detection of Clash of Clans connection drops, frozen screens, and bot errors — with instant screenshots saved for review. |
-| ⚙️ **Remote Config Editor** | Edit AutoClash's `config.json` remotely from your phone with atomic saves, backup retention, and one-click rollback. |
-| ⏱️ **Humanized Break Timer** | Detects scheduled breaks and displays an orange countdown banner so quiet logs are never mistaken for freezes. |
-| 🤖 **Discord Integration** | Optional bot with live control buttons, status embeds, all-time stats, and auto-renamed channels (🟢 active / 🟠 break / 🔴 stopped) plus log threads. |
-| 📱 **Instant Mobile Access** | Built-in QR codes with one-tap switching between **Tailscale**, **MagicDNS**, and **Home Network (LAN)**. Installable as a PWA. |
+| <img src="public/assets/coc/sword.svg" width="18" height="18" valign="middle"> **Remote Control** | Start, pause, stop, launch, and close AutoClash and your emulators (MuMu / LDPlayer) — per window or across all instances at once. |
+| <img src="public/assets/coc/gold.svg" width="18" height="18" valign="middle"> **All-Time & Daily Stats** | Switch between **Session**, **Daily**, and **All-Time** statistics straight from `stats.db` — tracks lifetime Gold, Elixir, Dark Elixir, walls, obstacles, upgrades, and 14-day trending charts. |
+| <img src="public/assets/coc/th18.svg" width="18" height="18" valign="middle"> **Multi-Village Rotation** | Live tracking of active profiles, detected Town Hall badges (TH1–TH18), break-aware countdown timers (`20:56 left`), and next village indicators (`→ Next: AltVillage`). |
+| <img src="public/assets/coc/shield.svg" width="18" height="18" valign="middle"> **Dual-Mode Live View & Touch/Drag** | Dual-mode streaming with **Data Saver** snapshots and **Ultra-Live Stream** (up to 30 FPS). Interactive touch and drag-to-swipe control directly on your phone. |
+| <img src="public/assets/coc/bh10.svg" width="18" height="18" valign="middle"> **Recent Raids Live Feed** | Real-time attack feed tracking star counts, loot gained, and army composition for both **Home Village** and **Builder Base**. |
+| <img src="public/assets/coc/gem.svg" width="18" height="18" valign="middle"> **ADB Quick-Fix Drawer** | 1-Click remote fixes: restart game, clear cache, enforce standard 1600x900 @ 300 DPI resolution, and reconnect ADB devices. |
+| **Interactive CLI Terminal** | Isolated `xor>` command prompt in the terminal to inspect `status`, `stats`, `instances`, `restart`, or `reset-password` without interruption from bot logs. |
+| **Live Multi-Tab Logs** | Real-time logs for every instance with auto-scroll, search, and a 1-hour health monitor bar showing errors, warnings, and recoveries. |
+| **Visual Incident Logger** | Automatic detection of Clash of Clans connection drops, frozen screens, and bot errors — with instant screenshots saved for review. |
+| **Remote Config Editor** | Edit AutoClash's `config.json` remotely from your phone with atomic saves, backup retention, and one-click rollback. |
+| **Humanized Break Engine** | Detects scheduled breaks and pauses rotation timers with an orange countdown banner so quiet logs are never mistaken for freezes. |
+| **Discord Bot Integration** | Bot with live control buttons, Rich Presence (*"Playing XOR WebMonitor"*), status embeds, all-time stats, and auto-renamed channels (🟢 active / 🟠 break / 🔴 stopped). |
+| **Instant Mobile Access** | Built-in QR codes with one-tap switching between **Tailscale**, **MagicDNS**, and **Home Network (LAN)**. Installable as a native PWA. |
 
 ---
 
-## 📋 Requirements
+## System Requirements
 
 * **Windows 10 / 11** (drives AutoClash through PowerShell automation)
 * **[Node.js 18+](https://nodejs.org)** (installer includes automatic winget install check)

@@ -4,6 +4,39 @@ All notable changes to **XOR WebMonitor for AutoClash** are documented in this f
 
 ---
 
+## [2.0.1] - 2026-08-25
+
+### 🎮 Clash of Clans Vector Game Asset Suite
+- **37 Hand-Crafted CoC SVG Icons**: Replaced all generic emojis with high-resolution vector assets across the Web UI and documentation:
+  - Town Hall Badges: `TH1` through `TH18`
+  - Builder Hall Badges: `BH1` through `BH10`
+  - Resources & Currencies: Gold, Elixir, Dark Elixir, and Gems
+  - Combat & Shields: Full/Empty Stars, Swords, and Donation Shields
+
+### ⏱️ Break-Aware Multi-Village Rotation Engine
+- **Eliminated False Modulo Clock Wrapping**: Fixed a desync where rotation timers reset back to `29:59` during humanized breaks.
+- **Accurate Break Duration Subtraction**: Active profile timers now hold and freeze while AutoClash is in a scheduled break, accurately displaying `(paused)` or `switching after break` when the session timer elapses.
+
+### ⚡ Dual-Mode Live View & Touch/Drag Controller
+- **Dual Stream Modes**: Switch seamlessly between **Data Saver** (low bandwidth snapshots) and **Ultra-Live Stream** (up to 30 FPS high-rate streaming).
+- **Interactive Drag & Swipe Controller**: Phone and desktop gestures now support drag-to-swipe, translating touches directly to `adb shell input swipe` with animated touch ripple feedback.
+- **ADB Quick-Fix Drawer**: 1-Click remote action toolbar for:
+  - 🔄 **Restart Clash**: Force-stops and relaunches Clash of Clans.
+  - 🧹 **Clear Cache**: Clears game cache to resolve asset stalling.
+  - 📐 **Fix Resolution (1600x900 @ 300 DPI)**: Restores standard AutoClash emulator display dimensions.
+  - 🔌 **Reconnect ADB**: Instantly restores lost device connections.
+
+### ⚔️ Recent Raids Live Feed (Home Base & Builder Base)
+- **Real-Time Battle Feed**: Live stream of recent attacks displaying stars won (0–3), loot looted, defender Town Hall levels, and army archetypes for both Home Village and Builder Base.
+
+### 🤖 Discord Rich Presence ("Playing XOR WebMonitor")
+- Added Discord Gateway Op 2 / Op 3 presence payload displaying `Playing XOR WebMonitor` on the Discord bot when active.
+
+### 🎨 Stealth Slate & Studio Theme Engine
+- Added 3 distinct UI color schemes: **Stealth Slate** (rich charcoal/mint), **Studio Slate** (daylight contrast), and **Cyber Neon** (cyan/violet) with instant persistent theme switching.
+
+---
+
 ## [2.0.0] - 2026-08-25
 
 ### 🚀 Major Highlights & Rebranding

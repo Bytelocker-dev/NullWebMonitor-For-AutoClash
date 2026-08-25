@@ -644,6 +644,45 @@ function startWebServer(deps) {
       }
     }
 
+    if (route === "/api/swipe" && req.method === "POST") {
+      const body = await readBody(req);
+      const instance = deps.resolveInstance(String(body.instanceId || ""));
+      if (!instance) return sendJson(res, 404, { error: "Unknown window." });
+      try {
+        const output = typeof deps.swipe === "function"
+          ? await deps.swipe(instance, Number(body.x1), Number(body.y1), Number(body.x2), Number(body.y2), Number(body.duration || 300))
+          : "Swipe executed.";
+        emit({ type: "action", action: "swipe", instance: instance.label, output });
+        return sendJson(res, 200, { ok: true, output });
+      } catch (error) {
+        return sendJson(res, 500, { error: error.message });
+      }
+    }
+
+    if (route === "/api/adb-action" && req.method === "POST") {
+      const body = await readBody(req);
+      const instance = deps.resolveInstance(String(body.instanceId || ""));
+      if (!instance) return sendJson(res, 404, { error: "Unknown window." });
+      const action = String(body.action || "");
+      try {
+        const output = typeof deps.adbAction === "function"
+          ? await deps.adbAction(instance, action)
+          : `Action ${action} executed.`;
+        emit({ type: "action", action: `adb-${action}`, instance: instance.label, output });
+        return sendJson(res, 200, { ok: true, output });
+      } catch (error) {
+        return sendJson(res, 500, { error: error.message });
+      }
+    }
+
+    if (route.startsWith("/api/raids/")) {
+      const instance = deps.resolveInstance(decodeURIComponent(route.slice("/api/raids/".length)));
+      if (!instance) return sendJson(res, 404, { error: "Unknown window." });
+      const limit = Math.min(50, Number(url.searchParams.get("limit") || 20));
+      const raids = typeof deps.raids === "function" ? deps.raids(instance, limit) : [];
+      return sendJson(res, 200, { ok: true, raids });
+    }
+
     if (route.startsWith("/api/history/")) {
       const instance = deps.resolveInstance(decodeURIComponent(route.slice("/api/history/".length)));
       if (!instance) return sendJson(res, 404, { error: "Unknown window." });

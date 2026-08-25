@@ -1262,6 +1262,27 @@ async function sendRecentLogLines(log, config, reason = "Recent log lines") {
 async function sendBeforeRecoveryScreenshot(log, config, instance, reason, existingFile = null) {
   try {
     const file = existingFile || await captureAdbScreen(config.control, instance);
+    try {
+      fs.mkdirSync(incidentDir(), { recursive: true });
+      const id = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+      const name = `${id}.jpg`;
+      fs.copyFileSync(file, path.join(incidentDir(), name));
+      const entry = {
+        id,
+        at: Date.now(),
+        kind: "recovery-screenshot",
+        severity: "warn",
+        log: log.name,
+        instance: instance.label,
+        message: `${log.name}: ${reason}`,
+        image: name,
+      };
+      fs.appendFileSync(incidentIndexPath(), `${JSON.stringify(entry)}\n`, "utf8");
+      pruneIncidents();
+      webEmit({ type: "incident", incident: entry });
+    } catch (err) {
+      console.error(`[incident] Could not record recovery incident: ${err.message}`);
+    }
     await config.sendFile(log.channelId, `**Before recovery** - \`${instance.label}\`\n${reason}`, file, { deleteAfterSend: true });
   } catch (error) {
     console.error(`[${log.name}] Could not send before-recovery screenshot: ${error.message}`);
@@ -2917,7 +2938,7 @@ function scanLogTailForProfile(rootDir, switchMinutes = 30, now = new Date()) {
     const latestFile = files[0].full;
     const sessionStartTime = parseLogFileNameDate(files[0].name, files[0].stat);
     const size = files[0].stat.size;
-    const readBytes = Math.min(size, 256 * 1024);
+    const readBytes = Math.min(size, 512 * 1024);
     const buffer = Buffer.alloc(readBytes);
     const fd = fs.openSync(latestFile, "r");
     try {
@@ -2928,27 +2949,56 @@ function scanLogTailForProfile(rootDir, switchMinutes = 30, now = new Date()) {
     const text = buffer.toString("utf8");
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
 
-    const switchEvents = [];
-    for (let i = 0; i < lines.length; i++) {
+    let lastSwitchIndex = -1;
+    let currentAccount = null;
+    let switchClockDate = null;
+
+    for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i];
-      const match = line.match(/(?:\[PROFILES?\]\s*(?:Starting on|Switching to|Switched to)|(?:Starting on|Switching to|Switched to)\s+profile)\s+([a-zA-Z0-9_\-\.]+)/i)
+      const match = line.match(/(?:\[PROFILES?\]\s*(?:Starting on|Switching to|Switched to|Profile loaded OK for)|\[PROFILE\]Switching to|(?:Starting on|Switching to|Switched to)\s+profile)\s+([a-zA-Z0-9_\-\.]+)/i)
         || line.match(/\[PROFILES?\](?:Profile\s+loaded\s+OK\s+for|Loaded\s+profile)\s+([a-zA-Z0-9_\-\.]+)/i);
       if (match && !/^(?:builder|home|village|main|clash)/i.test(match[1])) {
-        const account = match[1].trim();
-        const clockDate = lineClockToDate(line, now);
-        switchEvents.push({ lineIndex: i, account, clockDate });
+        currentAccount = match[1].trim();
+        lastSwitchIndex = i;
+        switchClockDate = lineClockToDate(line, now);
+        break;
       }
     }
 
-    if (switchEvents.length > 0) {
-      const latest = switchEvents[switchEvents.length - 1];
-      const switchIndex = switchEvents.length - 1;
-      const switchMs = Math.max(1, switchMinutes) * 60 * 1000;
-      const switchedAt = latest.clockDate ? latest.clockDate.getTime() : (sessionStartTime + (switchIndex * switchMs));
-      return { account: latest.account, switchedAt, sessionStartTime };
+    let completedBreakMs = 0;
+    let activeBreak = null;
+    const searchFrom = lastSwitchIndex >= 0 ? lastSwitchIndex : 0;
+
+    for (let i = searchFrom; i < lines.length; i++) {
+      const line = lines[i];
+      const bMatch = line.match(/(?:humanized\s+)?break\s*(?:started|start)?\s*[:\-]?\s*(\d+)\s*min/i);
+      if (bMatch) {
+        const bMin = Number(bMatch[1]);
+        const startClock = lineClockToDate(line, now);
+        activeBreak = {
+          startIdx: i,
+          minutes: bMin,
+          startedAt: startClock ? startClock.getTime() : Date.now(),
+          endsAt: (startClock ? startClock.getTime() : Date.now()) + bMin * 60 * 1000,
+        };
+      }
+      if (/humanized break ended/i.test(line) && activeBreak) {
+        completedBreakMs += activeBreak.minutes * 60 * 1000;
+        activeBreak = null;
+      }
     }
 
-    return { account: null, switchedAt: sessionStartTime, sessionStartTime };
+    const isCurrentlyOnBreak = Boolean(activeBreak && Date.now() < activeBreak.endsAt);
+    const switchedAt = switchClockDate ? switchClockDate.getTime() : sessionStartTime;
+
+    return {
+      account: currentAccount,
+      switchedAt,
+      sessionStartTime,
+      completedBreakMs,
+      isCurrentlyOnBreak,
+      activeBreak,
+    };
   } catch {}
 
   return null;
@@ -2963,9 +3013,14 @@ function resolveInstanceAccountDetails(instance, activeAccountName, isRunning) {
 
   let currentAccount = String(activeAccountName || "").trim();
   let logSwitchedAt = 0;
+  let completedBreakMs = 0;
+  let isCurrentlyOnBreak = false;
+
   if (logProfile) {
     if (!currentAccount || isRunning) currentAccount = logProfile.account || currentAccount;
     logSwitchedAt = logProfile.switchedAt;
+    completedBreakMs = logProfile.completedBreakMs || 0;
+    isCurrentlyOnBreak = Boolean(logProfile.isCurrentlyOnBreak);
   }
 
   if (!currentAccount && !isRunning && instanceConfig.START_PROFILE) {
@@ -2999,10 +3054,10 @@ function resolveInstanceAccountDetails(instance, activeAccountName, isRunning) {
   }
 
   let effectiveSwitchedAt = 0;
-  if (profileFileMtime > 0 && (Date.now() - profileFileMtime) < 12 * 60 * 60 * 1000) {
-    effectiveSwitchedAt = profileFileMtime;
-  } else if (logSwitchedAt > 0) {
+  if (logSwitchedAt > 0) {
     effectiveSwitchedAt = logSwitchedAt;
+  } else if (profileFileMtime > 0 && (Date.now() - profileFileMtime) < 12 * 60 * 60 * 1000) {
+    effectiveSwitchedAt = profileFileMtime;
   }
 
   const key = instance?.id || instance?.label || "default";
@@ -3027,12 +3082,13 @@ function resolveInstanceAccountDetails(instance, activeAccountName, isRunning) {
   if (multiVillageEnabled && isRunning && switchMinutes > 0) {
     const switchMs = switchMinutes * 60 * 1000;
     const baseTime = effectiveSwitchedAt > 0 ? effectiveSwitchedAt : tracking.switchedAt;
-    const elapsedMs = Math.max(0, now - baseTime);
-    const cycleElapsed = elapsedMs % switchMs;
-    const remainingMs = Math.max(0, switchMs - cycleElapsed);
+    const totalElapsed = Math.max(0, now - baseTime);
+    const activeElapsed = Math.max(0, totalElapsed - completedBreakMs);
+    const remainingMs = Math.max(0, switchMs - activeElapsed);
+
     remainingMinutes = Math.floor(remainingMs / 60000);
     remainingSeconds = Math.floor((remainingMs % 60000) / 1000);
-    switchDueAt = now + remainingMs;
+    switchDueAt = remainingMs > 0 ? now + remainingMs : 0;
 
     if (enabledAccounts.length > 1) {
       const currentIndex = enabledAccounts.findIndex((acc) => acc.name.toLowerCase() === currentAccount.toLowerCase());
@@ -3041,11 +3097,18 @@ function resolveInstanceAccountDetails(instance, activeAccountName, isRunning) {
     }
   }
 
-  const remainingText = multiVillageEnabled && isRunning
-    ? (remainingMinutes > 0 || remainingSeconds > 0
-        ? `${remainingMinutes}:${String(remainingSeconds).padStart(2, "0")} left`
-        : "switching soon")
-    : "";
+  let remainingText = "";
+  if (multiVillageEnabled && isRunning) {
+    if (isCurrentlyOnBreak) {
+      remainingText = remainingMinutes > 0 || remainingSeconds > 0
+        ? `${remainingMinutes}:${String(remainingSeconds).padStart(2, "0")} (paused)`
+        : "switching after break";
+    } else if (remainingMinutes > 0 || remainingSeconds > 0) {
+      remainingText = `${remainingMinutes}:${String(remainingSeconds).padStart(2, "0")} left`;
+    } else {
+      remainingText = "switching soon";
+    }
+  }
 
   return {
     account: currentAccount,
@@ -4169,6 +4232,69 @@ function allTimeStatsEmbed(instance) {
     footer: { text: `All-time totals · Source: ${source}` },
   };
 }
+
+function parseRecentRaidsForInstance(instance, limit = 20) {
+  const rootDir = autoClashRootDir(instance);
+  if (!rootDir || !fs.existsSync(rootDir)) return [];
+  const logsDir = path.join(rootDir, "logs");
+  if (!fs.existsSync(logsDir)) return [];
+
+  try {
+    const files = fs.readdirSync(logsDir)
+      .filter((f) => f.startsWith("log-") && f.endsWith(".txt"))
+      .map((f) => {
+        const full = path.join(logsDir, f);
+        return { name: f, full, mtime: fs.statSync(full).mtimeMs };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (!files.length) return [];
+    const latestFile = files[0].full;
+    const content = fs.readFileSync(latestFile, "utf8");
+    const lines = content.split(/\r?\n/).filter(Boolean);
+
+    const raids = [];
+    let current = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      const timeMatch = l.match(/^(\d{1,2}:\d{2}:\d{2}(?:\s*(?:AM|PM))?)/i);
+      const clock = timeMatch ? timeMatch[1] : "";
+
+      if (l.includes("[SEARCH]Base found") || l.includes("ATTACK START") || (l.includes("[ATTACK]") && l.includes("accepted"))) {
+        if (current && (current.stars > 0 || current.ended)) raids.push(current);
+        current = { id: i, village: "main", time: clock, stars: 0, thLevel: "", army: "Home Army", ended: false };
+      } else if (l.includes("[BUILDER]Battle found") || l.includes("[BUILDER]Preparing to attack") || l.includes("[BUILDER]Dropping Battle")) {
+        if (current && (current.stars > 0 || current.ended)) raids.push(current);
+        current = { id: i, village: "builder", time: clock, stars: 0, thLevel: "", army: "Builder Army", ended: false };
+      }
+
+      if (current) {
+        if (!current.time && clock) current.time = clock;
+
+        const starMatch = l.match(/(?:Stars|stars\s+detected):\s*(\d+)/i);
+        if (starMatch) current.stars = Math.max(current.stars, Number(starMatch[1]));
+
+        const thMatch = l.match(/TH\s+accepted:\s*(th\d+)/i);
+        if (thMatch) current.thLevel = thMatch[1].toUpperCase();
+
+        const armyMatch = l.match(/=== ([^=]+) ATTACK START ===/i);
+        if (armyMatch) current.army = armyMatch[1].trim();
+
+        if (l.includes("Battle ended") || l.includes("Battle finished") || l.includes("returning home")) {
+          current.ended = true;
+          raids.push(current);
+          current = null;
+        }
+      }
+    }
+    if (current && (current.stars > 0 || current.ended)) raids.push(current);
+    return raids.slice(-limit).reverse();
+  } catch {
+    return [];
+  }
+}
+
 async function editInteractionEmbed(token, interaction, embed) {
   await discordRequest(token, `/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
     method: "PATCH",
@@ -4181,13 +4307,18 @@ function safeFileName(value) {
   return String(value || "capture").replace(/[<>:"/\\|?*\x00-\x1F]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 80) || "capture";
 }
 
+const connectedAdbDevices = new Set();
+
 async function adbScreencapBytes(control, instance) {
   if (!adbReady(control, "screen capture")) throw new Error("ADB is not configured. Set the adb.exe path in Settings.");
   if (!instance.device) {
     throw new Error(`${instance.label} does not have an ADB device configured`);
   }
 
-  await execFileText(control.adbPath, ["connect", instance.device], { cwd: process.cwd() }).catch(() => "");
+  if (!connectedAdbDevices.has(instance.device)) {
+    await execFileText(control.adbPath, ["connect", instance.device], { cwd: process.cwd() }).catch(() => "");
+    connectedAdbDevices.add(instance.device);
+  }
   return new Promise((resolve, reject) => {
     execFile(control.adbPath, ["-s", instance.device, "exec-out", "screencap", "-p"], {
       cwd: process.cwd(),
@@ -4195,6 +4326,7 @@ async function adbScreencapBytes(control, instance) {
       maxBuffer: 64 * 1024 * 1024,
     }, (error, stdout, stderr) => {
       if (error) {
+        connectedAdbDevices.delete(instance.device);
         error.stderr = stderr;
         reject(error);
         return;
@@ -4383,6 +4515,52 @@ async function adbTap(control, instance, xRatio, yRatio) {
   const size = await adbScreenSize(control, instance);
   await adbTapRatio(control, instance, size, x, y);
   return `Tapped ${Math.round(size.width * x)},${Math.round(size.height * y)} on ${instance.label}.`;
+}
+
+async function adbSwipe(control, instance, x1Ratio, y1Ratio, x2Ratio, y2Ratio, durationMs = 300) {
+  const clamp = (value) => Math.min(1, Math.max(0, Number(value)));
+  const x1 = clamp(x1Ratio);
+  const y1 = clamp(y1Ratio);
+  const x2 = clamp(x2Ratio);
+  const y2 = clamp(y2Ratio);
+  const duration = Math.max(50, Math.min(2000, Number(durationMs) || 300));
+
+  const size = await adbScreenSize(control, instance);
+  const startX = Math.round(size.width * x1);
+  const startY = Math.round(size.height * y1);
+  const endX = Math.round(size.width * x2);
+  const endY = Math.round(size.height * y2);
+  await runAdb(control, instance, ["shell", "input", "swipe", String(startX), String(startY), String(endX), String(endY), String(duration)]);
+  return `Swiped on ${instance.label}.`;
+}
+
+async function adbQuickAction(control, instance, action) {
+  switch (action) {
+    case "restart-clash":
+      await runAdb(control, instance, ["shell", "am", "force-stop", "com.supercell.clashofclans"]);
+      await sleep(1000);
+      await runAdb(control, instance, ["shell", "monkey", "-p", "com.supercell.clashofclans", "-c", "android.intent.category.LAUNCHER", "1"]);
+      return "Clash of Clans restarted on " + instance.label + ".";
+    case "clear-cache":
+      try {
+        await runAdb(control, instance, ["shell", "pm", "clear", "--cache-only", "com.supercell.clashofclans"]);
+      } catch {
+        await runAdb(control, instance, ["shell", "rm", "-rf", "/data/data/com.supercell.clashofclans/cache/*"]);
+      }
+      return "Clash cache cleared on " + instance.label + ".";
+    case "fix-resolution":
+      await runAdb(control, instance, ["shell", "wm", "size", "1600x900"]);
+      await runAdb(control, instance, ["shell", "wm", "density", "300"]);
+      return "Resolution set to 1600x900 @ 300 DPI on " + instance.label + ".";
+    case "reconnect-adb":
+      if (instance.device && instance.device.includes(":")) {
+        await runAdb(control, instance, ["connect", instance.device]);
+        return "Reconnected ADB to " + instance.device + ".";
+      }
+      return "ADB reconnected.";
+    default:
+      throw new Error("Unknown ADB action: " + action);
+  }
 }
 
 async function adbTapRatio(control, instance, size, xRatio, yRatio) {
@@ -4699,8 +4877,20 @@ async function startControlGateway(control) {
           intents: 0,
           properties: {
             os: "windows",
-            browser: "discord-log-monitor",
-            device: "discord-log-monitor",
+            browser: "XOR-WebMonitor",
+            device: "XOR-WebMonitor",
+          },
+          presence: {
+            status: "online",
+            since: Date.now(),
+            afk: false,
+            activities: [
+              {
+                name: "XOR WebMonitor",
+                type: 0,
+                state: "Clash of Clans Automation",
+              },
+            ],
           },
         },
       }));
@@ -4709,6 +4899,23 @@ async function startControlGateway(control) {
 
     if (packet.op === 0 && packet.t === "READY") {
       console.log("AutoClash control gateway connected.");
+      try {
+        ws.send(JSON.stringify({
+          op: 3,
+          d: {
+            since: Date.now(),
+            status: "online",
+            afk: false,
+            activities: [
+              {
+                name: "XOR WebMonitor",
+                type: 0,
+                state: "Clash of Clans Automation",
+              },
+            ],
+          },
+        }));
+      } catch {}
       if (control.sendPanelOnStart && !panelSent) {
         panelSent = true;
         await renamePanelChannel(control);
@@ -5305,6 +5512,9 @@ async function main() {
       dailySummary: (dayKey) => buildDailySummary(control, dayKey),
       screenSize: (instance) => adbScreenSize(control, instance),
       tap: (instance, xRatio, yRatio) => adbTap(control, instance, xRatio, yRatio),
+      swipe: (instance, x1, y1, x2, y2, dur) => adbSwipe(control, instance, x1, y1, x2, y2, dur),
+      adbAction: (instance, action) => adbQuickAction(control, instance, action),
+      raids: (instance, limit) => parseRecentRaidsForInstance(instance, limit),
       pushStatus: () => {
         const push = pushConfig();
         return { enabled: push.enabled, server: push.server, minSeverity: push.minSeverity, topicSet: Boolean(push.topic) };
