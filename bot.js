@@ -672,7 +672,7 @@ async function renamePanelChannel(control) {
 // follows carries a retry-after measured in minutes, which used to stall the
 // caller. Track the last rename per channel and simply skip until the window
 // reopens — the next status change applies whatever the state is by then.
-const RENAME_MIN_INTERVAL_MS = 10 * 60 * 1000;
+const RENAME_MIN_INTERVAL_MS = 5 * 60 * 1000;
 const channelRenameHistory = new Map(); // channelId -> { lastAt, applied }
 
 async function updateChannelName(log, config) {
@@ -680,14 +680,17 @@ async function updateChannelName(log, config) {
   const controlId = (config && (config.controlChannelId || config.channelId)) || (typeof control !== "undefined" ? control?.channelId : null);
   if (controlId && log.channelId === controlId) return;
 
+  const isBreak = log.status === "paused" && (String(log.pausedReason || "").includes("humanized") || Boolean(log.breakUntil && Date.now() < log.breakUntil));
   const emoji =
     log.status === "stalled"
       ? "\u{1F534}"
-      : log.status === "paused"
-        ? "\u{1F7E1}"
-        : log.status === "finished"
-          ? "\u{26AA}"
-          : "\u{1F7E2}";
+      : isBreak
+        ? "\u{1F7E0}"
+        : log.status === "paused"
+          ? "\u{1F7E1}"
+          : log.status === "finished"
+            ? "\u{26AA}"
+            : "\u{1F7E2}";
   const nextName = `${emoji}-${log.channelBaseName}`;
 
   if (log.lastChannelName === nextName) return;
@@ -696,9 +699,15 @@ async function updateChannelName(log, config) {
   const now = Date.now();
   if (history && now - history.lastAt < RENAME_MIN_INTERVAL_MS) return;
 
-  await config.renameChannel(log.channelId, nextName);
-  channelRenameHistory.set(log.channelId, { lastAt: now, applied: nextName });
-  log.lastChannelName = nextName;
+  try {
+    await config.renameChannel(log.channelId, nextName);
+    channelRenameHistory.set(log.channelId, { lastAt: now, applied: nextName });
+    log.lastChannelName = nextName;
+  } catch (err) {
+    if (!isUnknownDiscordChannelError(err)) {
+      console.warn(`[${log.name}] Discord channel rename warning: ${err.message}`);
+    }
+  }
 }
 
 async function deleteAlertMessage(log, config) {
@@ -730,7 +739,7 @@ function initializeLog(log) {
   // recover the break from the log file rather than waiting for a new line.
   const onBreak = scanLogTailForBreak(log.activePath);
   if (onBreak) {
-    log.breakUntil = onBreak.endsAt + 120 * 1000;
+    log.breakUntil = onBreak.endsAt;
     log.pausedReason = "humanized-break";
     log.status = "paused";
     log.restartHandled = true;
@@ -1998,8 +2007,7 @@ async function checkLog(log, config) {
 
     if (pauseReason === "humanized-break") {
       const minutes = parseBreakMinutes(lines) ?? parseBreakMinutes(log.recentLines.slice(-12));
-      // A little slack so the break does not read as stalled a second early.
-      if (minutes) log.breakUntil = Date.now() + (minutes * 60 + 120) * 1000;
+      if (minutes) log.breakUntil = Date.now() + (minutes * 60) * 1000;
       log.pausedReason = "humanized-break";
       log.status = "paused";
       log.restartHandled = true;
@@ -2047,7 +2055,7 @@ async function checkLog(log, config) {
     // break is running, even if we never saw the announcing line.
     const scanned = scanLogTailForBreak(log.activePath);
     if (scanned) {
-      log.breakUntil = scanned.endsAt + 120 * 1000;
+      log.breakUntil = scanned.endsAt;
       log.pausedReason = "humanized-break";
       log.status = "paused";
       log.restartHandled = true;
@@ -5238,6 +5246,11 @@ async function main() {
         control.adbPath = newControl.adbPath;
         control.emulator = newControl.emulator;
 
+        discordRuntime.token = token;
+        discordRuntime.channelId = fallbackChannelId;
+        discordRuntime.configured = Boolean(token && fallbackChannelId);
+        discordRuntime.enabled = discordRuntime.configured && parseBooleanEnv("DISCORD_ENABLED", true);
+
         for (const log of logs) {
           log.channelId = optionalChannelId(envKeyForLog(log.name, "CHANNEL_ID")) || fallbackChannelId;
           log.channelBaseName =
@@ -5247,6 +5260,9 @@ async function main() {
         }
 
         startMonitoringLoop();
+        if (discordRuntime.configured && discordRuntime.enabled) {
+          startDiscord().catch((error) => console.error("[control]", `Discord startup failed: ${error.message}`));
+        }
         webEmit({ type: "state-update" });
         return result;
       },

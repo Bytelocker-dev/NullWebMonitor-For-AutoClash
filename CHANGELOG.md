@@ -28,6 +28,9 @@ All notable changes to **XOR WebMonitor for AutoClash** are documented in this f
   - Added dedicated per-instance statistics and log directory isolation.
 
 ### 🛠️ Resilience, Password Security & Bug Fixes
+- **Discord Bot Auto-Start on Setup**: Automatically initializes and launches the Discord gateway immediately upon saving the Web Setup wizard or Settings without requiring a terminal restart.
+- **Discord Break Channel Renaming**: Channels dynamically switch to `🟠-<channel-name>` when AutoClash is on a humanized break with 5-minute rate-limit tracking.
+- **Exact Break Timer Precision**: Stripped buffer bloat from `breakUntil` so announced break durations (e.g. 22 min) match the exact countdown to the second.
 - **Special Character & Unicode Password Support**: Completely character-resilient `.env` parser and serializer that safely handles `#`, `=`, `"`, `$`, spaces, symbols, and UTF-8 characters without string truncation or corruption.
 - **Fail-Safe UI Initialization**: Enhanced frontend view rendering and error boundaries to prevent blank screen states on page refresh or startup.
 - **Cloudflare & Reverse Proxy Support**: Real client IP extraction from `CF-Connecting-IP` and `X-Forwarded-For` with `TRUST_PROXY` configuration, preventing remote lockout on Cloudflare Tunnels.
