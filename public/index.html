@@ -672,6 +672,8 @@
         <div class="sub">Monitor emulators in real time. Switch between Data Saver (bandwidth friendly) and Ultra-Live Stream.</div>
         <div class="btn-row" style="margin-top:12px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
           <button class="btn sm" id="tapToggle">Touch & Drag: off</button>
+          <button class="btn sm" data-keyevent="4">Back</button>
+          <button class="btn sm" data-keyevent="3">Home</button>
           <span class="sub tiny" style="color:var(--muted)">| Quick ADB:</span>
           <button class="btn sm ghost" data-adb="restart-clash">🔄 Restart Clash</button>
           <button class="btn sm ghost" data-adb="clear-cache">🧹 Clear Cache</button>
@@ -756,6 +758,22 @@
       <div class="card">
         <h2>Channels</h2>
         <div id="discordChannels" class="sub"></div>
+      </div>
+    </section>
+
+    <section id="tab-terminal" hidden>
+      <div class="card" style="display:flex; flex-direction:column; height: calc(100vh - 120px); padding: 0;">
+        <div class="header-row" style="padding: 12px 16px; border-bottom: 1px solid var(--line-soft);">
+          <h2 style="margin:0">Live ANSI Terminal</h2>
+        </div>
+        <pre id="terminal-out" class="terminal-view" style="flex:1; overflow-y:auto; margin:0; padding:16px; background:#000; color:#fff; border-radius: 0 0 9px 9px; font-family: monospace; white-space: pre-wrap; font-size:13px;"></pre>
+      </div>
+    </section>
+
+    <section id="tab-about" hidden>
+      <div class="card">
+        <h2>About & System Diagnostics</h2>
+        <div id="aboutContent" style="margin-top:16px;">Loading diagnostics...</div>
       </div>
     </section>
 
@@ -1006,6 +1024,12 @@ function appendEvent(event) {
   }
   const targets = event.log ? [event.log] : state.logs.map((l) => l.name);
   let text = "";
+  if (event.type === "terminal-out") {
+    let t = bufferFor("terminal") + (bufferFor("terminal") ? "\n" : "") + parseAnsi(event.text);
+    if (t.length > MAX_LOG_CHARS) t = t.slice(-MAX_LOG_CHARS);
+    logBuffers.set("terminal", t);
+    return;
+  }
   if (event.type === "event") text = event.output;
   else if (event.type === "action") text = `${event.instance} -> ${event.action}: ${String(event.output).split("\n")[0]}`;
   else if (event.type === "action-error") text = `${event.instance} -> ${event.action} FAILED: ${String(event.output).split("\n")[0]}`;
@@ -1036,6 +1060,20 @@ function flushLogs() {
   }
 }
 
+
+function parseAnsi(str) {
+  return esc(str)
+    .replace(/\x1b\[30m/g, '<span style="color: black">')
+    .replace(/\x1b\[31m/g, '<span style="color: #ff3b30">')
+    .replace(/\x1b\[32m/g, '<span style="color: #2ecc71">')
+    .replace(/\x1b\[33m/g, '<span style="color: #f1c40f">')
+    .replace(/\x1b\[34m/g, '<span style="color: #3498db">')
+    .replace(/\x1b\[35m/g, '<span style="color: #9b59b6">')
+    .replace(/\x1b\[36m/g, '<span style="color: #00ffff">') // Cyan for XOR logo
+    .replace(/\x1b\[37m/g, '<span style="color: white">')
+    .replace(/\x1b\[90m/g, '<span style="color: gray">')
+    .replace(/\x1b\[0m/g, '</span>');
+}
 const logSlug = (name) => name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
 // ---------- tabs ----------
@@ -1053,6 +1091,8 @@ function renderTabs() {
     <button data-tab="config">Config</button>
     <button data-tab="incidents">Incidents${unseenIncidents ? `<span class="badge warn"></span>` : ""}</button>
     <button data-tab="discord">Discord<span class="badge ${state.discord?.running ? "" : "off"}"></span></button>
+    <button data-tab="terminal">Terminal</button>
+    <button data-tab="about">About</button>
     <button data-tab="changelog">Changelog</button>
     <button data-tab="guide">Guide</button>
     <button data-tab="settings">Settings</button>`;
@@ -1114,7 +1154,7 @@ async function loadChangelog() {
         <div style="margin-top:12px">
           <h3 style="font-size:14.5px;color:var(--accent);margin:0 0 6px">${esc(sec.title)}</h3>
           <ul class="guide-list" style="margin:4px 0 10px">
-            ${(sec.items || []).map((item) => `<li>${esc(item)}</li>`).join("")}
+            ${(sec.items || []).map((item) => `<li>${md(item)}</li>`).join("")}
           </ul>
         </div>
       `).join("");
@@ -1139,6 +1179,14 @@ function selectTab(name) {
   if (name === "stats") { loadStats(); loadCharts(); loadSummary(); statsTimer = setInterval(loadStats, 15000); }
   else clearInterval(statsTimer);
   if (name === "discord") loadDiscord();
+  if (name === "about") loadAbout();
+  if (name === "terminal") {
+    const pre = $("#terminal-out");
+    if (pre) {
+      pre.scrollTop = pre.scrollHeight;
+      pre._follow = true;
+    }
+  }
   if (name === "changelog") loadChangelog();
   if (name === "settings") { loadPush(); loadAccess(); loadSettings(); }
   if (name === "config") loadConfig();
@@ -2262,11 +2310,20 @@ function renderIncidents() {
         </h2>
         <div class="sub tiny">${esc(entry.instance || entry.log || "")} &middot; ${ago(entry.at)}</div>
         <div class="sub" style="margin-top:9px;white-space:pre-wrap;overflow-wrap:anywhere">${esc(entry.message)}</div>
-        ${entry.image
-          ? `<img class="incident-img" loading="lazy" src="/api/incident-image/${encodeURIComponent(entry.image)}" alt="screenshot at incident">`
-          : entry.captureError
-            ? `<div class="sub tiny" style="margin-top:9px">No photo: ${esc(entry.captureError)}</div>`
-            : ""}
+        ${
+  entry.images && entry.images.length > 0
+    ? `<div class="carousel" style="display:flex; overflow-x:auto; gap:8px; margin-top:12px; padding-bottom:8px; scroll-snap-type: x mandatory;">
+        ${entry.images.map(img => `<img loading="lazy" src="/api/incident-image/${encodeURIComponent(img)}" alt="screenshot" style="max-height:200px; border-radius:6px; scroll-snap-align: start; flex-shrink:0;">`).join("")}
+      </div>`
+    : entry.image
+      ? `<img class="incident-img" loading="lazy" src="/api/incident-image/${encodeURIComponent(entry.image)}" alt="screenshot at incident" style="margin-top:12px">`
+      : entry.captureError
+        ? `<div class="sub tiny" style="margin-top:9px">No photo: ${esc(entry.captureError)}</div>`
+        : ""
+}
+<div style="margin-top:12px">
+  <button class="btn sm" onclick="navigator.clipboard.writeText('Crash Report:\nTime: ' + new Date(${entry.at}).toISOString() + '\nKind: ${esc(entry.kind)}\nInstance: ${esc(entry.instance || entry.log || '')}\nMessage: ${esc(entry.message)}').then(() => toast('Copied!'))">📋 Copy Crash Report</button>
+</div>
       </div>`).join("")
     : `<div class="card sub">Nothing recorded yet. Crashes, recoveries and updates will show up here.</div>`;
 }
@@ -2281,6 +2338,22 @@ $("#incidentFilter")?.addEventListener("click", (event) => {
 
 // ---------- discord ----------
 
+async function loadAbout() {
+  try {
+    const data = await api("/api/system-info");
+    $("#aboutContent").innerHTML = `
+      <div class="row"><b>Monitor Version:</b> <span>${esc(data.version)}</span></div>
+      <div class="row"><b>Node.js:</b> <span>${esc(data.node)}</span></div>
+      <div class="row"><b>Platform:</b> <span>${esc(data.platform)}</span></div>
+      <div class="row"><b>Uptime:</b> <span>${ago(Date.now() - (data.uptime * 1000))}</span></div>
+      <div class="row"><b>Memory (RSS):</b> <span>${(data.rss / 1024 / 1024).toFixed(1)} MB</span></div>
+      <div class="row"><b>Memory (Heap):</b> <span>${(data.heapUsed / 1024 / 1024).toFixed(1)} MB</span></div>
+      <div class="row"><b>OS Free Mem:</b> <span>${(data.osFreeMem / 1024 / 1024 / 1024).toFixed(1)} GB</span></div>
+    `;
+  } catch (error) {
+    if (error.message !== "Signed out.") $("#aboutContent").innerHTML = `<div class="card sub">${esc(error.message)}</div>`;
+  }
+}
 async function loadDiscord() {
   try {
     const status = await api("/api/discord");
@@ -2367,6 +2440,19 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  if (button.dataset.keyevent) {
+    button.disabled = true;
+    try {
+      const result = await post("/api/keyevent", { instanceId: $("#liveSelect").value, key: button.dataset.keyevent });
+      toast(result.output || "Key sent.");
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+  
   if (button.dataset.shot) {
     button.disabled = true;
     try {
@@ -2416,6 +2502,7 @@ async function loadSettings() {
 
     const labels = {
       WEB_PORT: { title: "Web Server Port", desc: "Default is 8477. Restart required after port change." },
+      WEB_HOST: { title: "Bind Interface", desc: "0.0.0.0 (all) or a specific IP like a Tailscale IP." },
       TRUST_PROXY: { title: "Trust Cloudflare / Reverse Proxy", desc: "Extract real client IP from CF-Connecting-IP & X-Forwarded-For headers to prevent lockout." },
       AUTO_RESTART_MODE: { title: "Auto-Restart Behavior", desc: "Set to 'auto' for automatic restart on freeze/crash, or 'off'." },
       COC_VISUAL_CHECK_ENABLED: { title: "Visual OCR / Crash Detection", desc: "Detects game disconnects, out of gold, and crash screens automatically." },
@@ -2445,7 +2532,7 @@ async function loadSettings() {
       },
       {
         title: "🌐 Network & Remote Access",
-        keys: ["WEB_PORT", "TRUST_PROXY", "NTFY_ENABLED", "NTFY_TOPIC"]
+        keys: ["WEB_PORT", "WEB_HOST", "TRUST_PROXY", "NTFY_ENABLED", "NTFY_TOPIC"]
       }
     ];
 

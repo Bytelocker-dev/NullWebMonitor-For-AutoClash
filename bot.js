@@ -1113,7 +1113,7 @@ function pruneIncidents(keep = Number(process.env.INCIDENT_KEEP || 400)) {
   for (const line of dropped) {
     try {
       const entry = JSON.parse(line);
-      if (entry.image) deleteFileQuietly(path.join(incidentDir(), entry.image));
+      if (entry.images) { entry.images.forEach(img => deleteFileQuietly(path.join(incidentDir(), img))); } else if (entry.image) { deleteFileQuietly(path.join(incidentDir(), entry.image)); }
     } catch {
       // Unparseable line has no image to clean up.
     }
@@ -1138,16 +1138,21 @@ async function recordIncident(config, details) {
 
     // Screenshots are only worth the disk space on crashes and recoveries.
     if (details.capture?.device) {
-      const name = `${id}.jpg`;
       try {
-        const bytes = await captureLiveFrame(config.control, details.capture, {
-          maxWidth: Number(process.env.INCIDENT_IMAGE_WIDTH || 1280),
-          quality: Number(process.env.INCIDENT_IMAGE_QUALITY || 80),
-        });
-        fs.writeFileSync(path.join(incidentDir(), name), bytes);
-        entry.image = name;
+        entry.images = [];
+        for (let i = 0; i < 5; i++) {
+          const name = `${id}-${i}.jpg`;
+          const bytes = await captureLiveFrame(config.control, details.capture, {
+            maxWidth: Number(process.env.INCIDENT_IMAGE_WIDTH || 1280),
+            quality: Number(process.env.INCIDENT_IMAGE_QUALITY || 80),
+          });
+          fs.writeFileSync(path.join(incidentDir(), name), bytes);
+          entry.images.push(name);
+          if (i === 0) entry.image = name;
+          if (i < 4) await new Promise(r => setTimeout(r, 1000));
+        }
       } catch (error) {
-        entry.captureError = error.message.slice(0, 300);
+        if (!entry.image) entry.captureError = error.message.slice(0, 300);
       }
     }
 
@@ -4557,6 +4562,12 @@ async function adbTap(control, instance, xRatio, yRatio) {
   return `Tapped ${Math.round(size.width * x)},${Math.round(size.height * y)} on ${instance.label}.`;
 }
 
+async function adbKeyevent(control, instance, keycode) {
+  if (!control.enabled || !instance) throw new Error("Control not enabled.");
+  const serial = instance.adbSerial || `127.0.0.1:${instance.adbPort}`;
+  await execPromise(`adb -s ${serial} shell input keyevent ${keycode}`, { timeout: 3000 });
+}
+
 async function adbSwipe(control, instance, x1Ratio, y1Ratio, x2Ratio, y2Ratio, durationMs = 300) {
   const clamp = (value) => Math.min(1, Math.max(0, Number(value)));
   const x1 = clamp(x1Ratio);
@@ -5065,6 +5076,13 @@ function startConsoleInterface(logs, control, config) {
       } catch {}
     }
     writer.apply(console, args);
+    try {
+      const util = require('util');
+      const text = util.format(...args);
+      if (typeof webEmit === "function") {
+        webEmit({ type: "terminal-out", text });
+      }
+    } catch (e) {}
     if (process.stdout.isTTY) {
       rl.prompt(true);
     }
@@ -5567,6 +5585,7 @@ async function main() {
       screenSize: (instance) => adbScreenSize(control, instance),
       tap: (instance, xRatio, yRatio) => adbTap(control, instance, xRatio, yRatio),
       swipe: (instance, x1, y1, x2, y2, dur) => adbSwipe(control, instance, x1, y1, x2, y2, dur),
+      keyevent: (instance, key) => adbKeyevent(control, instance, key),
       adbAction: (instance, action) => adbQuickAction(control, instance, action),
       raids: (instance, limit) => parseRecentRaidsForInstance(instance, limit),
       villages: (instance) => getVillageStatsBreakdown(instance),

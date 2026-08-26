@@ -4,6 +4,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const zlib = require("zlib");
 const { WebSocketServer } = require("ws");
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -427,7 +428,7 @@ function startWebServer(deps) {
 
   const CONTENT_TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json", ".json": "application/json" };
 
-  function serveStatic(res, urlPath) {
+  function serveStatic(req, res, urlPath) {
     const name = urlPath === "/" ? "index.html" : urlPath.replace(/^\/+/, "");
     const filePath = path.join(publicDir, name);
     // Keep the request inside publicDir even if the URL contains ../ segments.
@@ -435,15 +436,47 @@ function startWebServer(deps) {
       res.writeHead(403).end("Forbidden");
       return;
     }
-    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    
+    let stat;
+    try {
+      stat = fs.statSync(filePath);
+      if (!stat.isFile()) throw new Error();
+    } catch {
       res.writeHead(404).end("Not found");
       return;
     }
-    res.writeHead(200, {
-      "content-type": CONTENT_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream",
-      "cache-control": "no-cache",
-    });
-    fs.createReadStream(filePath).pipe(res);
+
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = CONTENT_TYPES[ext] || "application/octet-stream";
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+
+    // ETag for caching
+    const etag = `W/"${stat.size}-${stat.mtime.getTime()}"`;
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304);
+      res.end();
+      return;
+    }
+
+    const headers = {
+      "content-type": contentType,
+      "cache-control": ext === '.html' ? "no-cache" : "public, max-age=86400",
+      "etag": etag
+    };
+
+    const raw = fs.createReadStream(filePath);
+    if (acceptEncoding.match(/\bgzip\b/)) {
+      headers['content-encoding'] = 'gzip';
+      res.writeHead(200, headers);
+      raw.pipe(zlib.createGzip()).pipe(res);
+    } else if (acceptEncoding.match(/\bdeflate\b/)) {
+      headers['content-encoding'] = 'deflate';
+      res.writeHead(200, headers);
+      raw.pipe(zlib.createDeflate()).pipe(res);
+    } else {
+      res.writeHead(200, headers);
+      raw.pipe(res);
+    }
   }
 
   function sendPng(res, filePath) {
@@ -626,6 +659,22 @@ function startWebServer(deps) {
       return undefined;
     }
 
+    if (route === "/api/system-info") {
+      const os = require("os");
+      const mem = process.memoryUsage();
+      return sendJson(res, 200, {
+        version: "v2.0.4",
+        node: process.version,
+        platform: process.platform,
+        uptime: process.uptime(),
+        rss: mem.rss,
+        heapUsed: mem.heapUsed,
+        osFreeMem: os.freemem(),
+        osTotalMem: os.totalmem(),
+        interfaces: os.networkInterfaces()
+      });
+    }
+
     if (route === "/api/fullscreen") {
       const file = await deps.fullScreen();
       return sendPng(res, file);
@@ -642,6 +691,14 @@ function startWebServer(deps) {
       } catch (error) {
         return sendJson(res, 500, { error: error.message });
       }
+    }
+
+    if (route === "/api/keyevent" && req.method === "POST") {
+      const body = await readBody(req);
+      const instance = resolveInstanceOrThrow(body.instanceId);
+      if (!deps.keyevent) throw new Error("Control features disabled.");
+      await deps.keyevent(instance, body.key);
+      return sendJson(res, 200, { output: `Key ${body.key} sent.` });
     }
 
     if (route === "/api/swipe" && req.method === "POST") {
@@ -965,7 +1022,7 @@ function startWebServer(deps) {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
     if (!url.pathname.startsWith("/api/")) {
-      serveStatic(res, url.pathname);
+      serveStatic(req, res, url.pathname);
       return;
     }
 

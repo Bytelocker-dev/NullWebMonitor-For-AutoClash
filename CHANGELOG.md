@@ -4,6 +4,33 @@ All notable changes to **XOR WebMonitor for AutoClash** are documented in this f
 
 ---
 
+## [2.0.4] - 2026-08-26
+
+### ⏱️ Incident Burst Time-Lapse & Crash Reporter
+- **Interactive Incident Carousel**: Crash and recovery incident reports now feature a swipeable 5-frame carousel of screenshots (captured at 1-second intervals) instead of a single static image, allowing you to clearly see what happened leading up to an incident.
+- **Copy Crash Report Button**: Added a dedicated button to copy a formatted markdown crash report (time, kind, instance, message) to the clipboard.
+
+### 📱 Live View Touch Gestures & Keys
+- **Advanced Swipe Controller**: Drag-and-drop mouse gestures on the Live View are now converted into fluid ADB swipe commands (`adb shell input swipe X1 Y1 X2 Y2 duration`).
+- **Virtual Navigation Keys**: Added dedicated "Back" and "Home" buttons under the Live View to send ADB keyevents (4 and 3) instantly.
+
+### 💻 Live ANSI Web Terminal
+- **Native ANSI Parsing**: Added a new "Terminal" tab that streams the monitor's raw Node.js backend console output in real-time, parsing complex ANSI color codes (`\x1b[36m`, etc.) directly into a beautifully colored, auto-scrolling HTML terminal view.
+
+### 🚀 Server Bandwidth & Speed Optimization
+- **Gzip & Deflate Compression**: Static assets are now heavily compressed using native Node.js `zlib` compression if the browser supports it, drastically reducing load times over slow cellular connections.
+- **Aggressive Browser Caching**: Added ETag hashing and Cache-Control headers to cache static assets, icons, and UI components indefinitely until they change.
+
+### 📊 About & System Diagnostics Tab
+- **System Health Monitor**: Added a new "About" tab displaying vital diagnostics including Node.js version, platform, uptime, RSS and Heap memory usage, and total/free OS memory to help monitor the host machine's health.
+- **Explicit Network Interface Binding**: Added `WEB_HOST` setting support to optionally bind the HTTP server to a specific network interface (e.g., Tailscale IP or localhost), while defaulting to `0.0.0.0` to preserve full Cloudflare Tunnel compatibility.
+
+### 🐞 Bug Fixes & Polish
+- **Discord Paused State Sync**: Improved Discord embed color coding to correctly flag "Paused" versus "On a Break" states.
+- **Terminal Wrap Fixes**: Restored the custom "XOR WebMonitor" terminal banner using standard figlet width sizing to prevent wrapping glitches on 80-column console windows.
+
+---
+
 ## [2.0.2] - 2026-08-26
 
 ### ✨ True Apple iOS Liquid Glass UI — Full Implementation
