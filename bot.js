@@ -273,7 +273,7 @@ function writeEnvFile(updates) {
   const merged = readEnvFile();
 
   for (const [key, rawValue] of Object.entries(updates || {})) {
-    if (!/^[A-Z][A-Z0-9_]*$/.test(key)) throw new Error(`Invalid setting name: ${key}`);
+    if (!/^[A-Z0-9_]+$/.test(key)) throw new Error(`Invalid setting name: ${key}`);
     const value = String(rawValue ?? "");
     if (!value.trim() && (key === "DISCORD_TOKEN" || key.startsWith("WEB_PASSWORD"))) continue;
     merged[key] = value;
@@ -4990,18 +4990,30 @@ async function startControlGateway(control) {
 }
 
 function printStartupBanner() {
-  console.log(`\x1b[1;37m
-  ██╗  ██╗     ██████     ██████╗ 
-  ╚██╗██╔╝   ██████████   ██╔══██╗
-   ╚███╔╝    ██\x1b[1;31m██\x1b[1;37m██\x1b[1;31m██\x1b[1;37m██   ██████╔╝
-   ██╔██╗    ██  \x1b[1;30m██\x1b[1;37m  ██   ██╔══██╗
-  ██╔╝ ██╗    ████████    ██║  ██║
-  ╚═╝  ╚═╝     ║ ║ ║ ║    ╚═╝  ╚═╝
-               ▄ ▄ ▄ ▄            
-  \x1b[90m──────────────────────────────────\x1b[0m
-  \x1b[1;36mXOR WebMonitor v2.0.2\x1b[0m
-  Self-Hosted Control Panel & Stats Monitor
-  `);
+  console.clear();
+  console.log(`\x1b[36m
+                              .                                  ::-=-:.                         :+==
+                         :.. +              .- :*:           *: *+####*-=*-.      .#--.*-*+===+******-.
+                          -==++:        +. *+++*.         ..+***+#=*******##+     .#**+****#+-:-+*###*+==
+                           ::+*+= .    -#+**#*=       **=--######+*++#******#*-    -+*+**:       .  -=*+=--:
+                              =**:     -***++:       =**#- +-: -.    :*******+=.    :#***              -.+*=
+                               .=**.   +**+        -+=**#:             =*+**#*+:    -#**                :+**:
+                               ..-+++.**+**+-      -==*+.:             :+** .-=*.    -#**               ..+**
+                                :---++++***        =-*.                .##-    -     *+++             =+---+=
+                                  :-====*:-        :=:                 :+#-          :-*+    ....--=*+=-=  -
+                                   -:--==**-         :.-              -  =+=            +**=+%#*##+*+-:: :
+                                   :. .:-+*=         .:+=          ::-:   :+          . =*=: .*--*+=    .=
+                             .-=..     ..-=-.       .     =:   .-  ::-  ..++         . :*    -=-+-+-   .
+                             -:- :        :+=        : :==+-   ::.:.:. =. ==..       . .=      ++:=:
+                             .:.=:       . =-         :+=.:..  =*+-::.=:..         .. ..      =: -..:
+                             ..:-=          -:-          ..  - :::. .:-..          -             =-   .
+                             .               ..-+            =  =  = : -.          =             +.
+                                                         =:              -      .           .                    ::-=
+
+                                 \x1b[1;36mXOR WebMonitor v2.0.3\x1b[0m
+
+\x1b[1;30mSelf-Hosted Control Panel & Stats Monitor\x1b[0m
+`);
 }
 
 async function handlePasswordResetCli(newPasswordArg) {
