@@ -1,6 +1,6 @@
 param(
-  [string]$SourceImage = (Join-Path $PSScriptRoot "public\logo.png"),
-  [string]$OutDir = (Join-Path $PSScriptRoot "public")
+  [string]$SourceImage = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "public\logo.png"),
+  [string]$OutDir = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "public")
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,7 +15,8 @@ function Create-AppIcon {
     [string]$Source,
     [string]$Destination,
     [int]$Width,
-    [int]$Height
+    [int]$Height,
+    [bool]$Transparent = $false
   )
 
   if (Test-Path $Source) {
@@ -28,7 +29,11 @@ function Create-AppIcon {
           $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
           $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
           $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-          $g.Clear([System.Drawing.ColorTranslator]::FromHtml("#0b0f16"))
+          if ($Transparent) {
+            $g.Clear([System.Drawing.Color]::Transparent)
+          } else {
+            $g.Clear([System.Drawing.ColorTranslator]::FromHtml("#0b0f16"))
+          }
 
           $g.DrawImage($src, 0, 0, $Width, $Height)
         } finally {
@@ -49,4 +54,5 @@ function Create-AppIcon {
 
 Create-AppIcon -Source $SourceImage -Destination (Join-Path $OutDir "icon-192.png") -Width 192 -Height 192
 Create-AppIcon -Source $SourceImage -Destination (Join-Path $OutDir "icon-512.png") -Width 512 -Height 512
-Create-AppIcon -Source $SourceImage -Destination (Join-Path $OutDir "favicon.png") -Width 64 -Height 64
+Create-AppIcon -Source $SourceImage -Destination (Join-Path $OutDir "apple-touch-icon.png") -Width 180 -Height 180
+Create-AppIcon -Source $SourceImage -Destination (Join-Path $OutDir "favicon.png") -Width 64 -Height 64 -Transparent $true

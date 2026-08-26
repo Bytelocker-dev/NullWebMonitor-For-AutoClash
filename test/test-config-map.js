@@ -6,7 +6,7 @@
 // Run: node test-config-map.js
 
 const assert = require("assert");
-const map = require("./public/config-map.js");
+const map = require("../public/config-map.js");
 
 // Real key sets, captured from AutoClash 2.0.9. Account-level config.
 const ACCOUNT_KEYS = [

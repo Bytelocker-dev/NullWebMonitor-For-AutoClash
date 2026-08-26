@@ -9,11 +9,11 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const { makePasswordHash } = require("./web-server");
+const { makePasswordHash } = require("../web-server");
 
 // --- password hashing -------------------------------------------------------
 
-const server = fs.readFileSync(path.join(__dirname, "web-server.js"), "utf8");
+const server = fs.readFileSync(path.join(__dirname, "..", "web-server.js"), "utf8");
 const verifyPassword = new Function(
   "crypto",
   `${server.match(/function scryptHash[\s\S]*?\r?\n\}\r?\n/)[0]}
@@ -40,7 +40,7 @@ fs.writeFileSync(
   ["# comment", "DISCORD_TOKEN=secret-token", "WEB_PASSWORD_HASH=scrypt$aa$bb", "CHECK_INTERVAL_SECONDS=5", ""].join("\r\n")
 );
 
-const bot = fs.readFileSync(path.join(__dirname, "bot.js"), "utf8");
+const bot = fs.readFileSync(path.join(__dirname, "..", "bot.js"), "utf8");
 const envHelpers = new Function(
   "fs",
   "path",
@@ -75,7 +75,7 @@ fs.rmSync(workDir, { recursive: true, force: true });
 
 // --- emulator index math ----------------------------------------------------
 
-const botSource = fs.readFileSync(path.join(__dirname, "bot.js"), "utf8");
+const botSource = fs.readFileSync(path.join(__dirname, "..", "bot.js"), "utf8");
 const emulatorIndexForInstance = new Function(
   `${botSource.match(/function emulatorIndexForInstance[\s\S]*?\r?\n\}\r?\n/)[0]}
    return emulatorIndexForInstance;`
@@ -96,7 +96,7 @@ assert.strictEqual(emulatorIndexForInstance("mumu", {}), null);
 
 // --- static path guard ------------------------------------------------------
 
-const publicDir = path.join(__dirname, "public");
+const publicDir = path.join(__dirname, "..", "public");
 for (const attempt of ["/../.env", "/../../secret.txt", "/..%2f.env"]) {
   const resolved = path.join(publicDir, decodeURIComponent(attempt).replace(/^\/+/, ""));
   const allowed = resolved.startsWith(publicDir + path.sep);

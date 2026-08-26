@@ -55,28 +55,26 @@
 <meta name="mobile-web-app-capable" content="yes">
 <style>
   :root {
-    --bg: #0b0f16; --panel: #141a24; --panel-2: #1b2331; --panel-3: #222c3d;
-    --line: #2b3648; --line-soft: #202938;
-    --text: #e8eef6; --muted: #8b9ab0; --dim: #63728a;
-    --accent: #4c8dff; --accent-dim: #2a5db8;
-    --ok: #2fa855; --warn: #d9a222; --bad: #e0453f; --brk: #ff8c1a;
-    --r: 14px; --r-sm: 9px;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
-  }
-
-  [data-theme="studio"] {
-    --bg: #141b26; --panel: #1d2535; --panel-2: #242f44; --panel-3: #2d3b55;
-    --line: #384866; --line-soft: #2e3c54;
-    --text: #f0f4f9; --muted: #9bb0cd; --dim: #7388a6;
-    --accent: #38bdf8; --accent-dim: #0284c7;
-  }
-
-  [data-theme="neon"] {
-    --bg: #090c12; --panel: #111722; --panel-2: #182030; --panel-3: #212c42;
-    --line: #2b3952; --line-soft: #1e283b;
-    --text: #f3f7fc; --muted: #8ea3c4; --dim: #5c7091;
-    --accent: #00f0ff; --accent-dim: #00a8b3;
-    --ok: #00e5a3;
+    /* Studio Slate + Liquid Glass */
+    --bg: #141b26;
+    --panel: rgba(29, 37, 53, 0.75);
+    --panel-2: rgba(36, 47, 68, 0.65);
+    --panel-3: rgba(45, 59, 85, 0.85);
+    --line: rgba(155, 176, 205, 0.15);
+    --line-soft: rgba(155, 176, 205, 0.08);
+    --text: #f0f4f9;
+    --muted: #9bb0cd;
+    --dim: #7388a6;
+    --accent: #38bdf8;
+    --accent-dim: #0284c7;
+    --ok: #10b981;
+    --warn: #f59e0b;
+    --bad: #ef4444;
+    --brk: #f97316;
+    --r: 16px;
+    --r-sm: 10px;
+    --pad: 14px;
+    --shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.55), inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
   }
 
   .coc-icon { vertical-align: middle; display: inline-block; flex-shrink: 0; }
@@ -158,6 +156,11 @@
     margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-text-size-adjust: 100%; overscroll-behavior-y: none;
+    background-image:
+      radial-gradient(at 0% 0%, rgba(34, 174, 247, 0.10) 0px, transparent 55%),
+      radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.08) 0px, transparent 55%),
+      radial-gradient(at 50% 100%, rgba(76, 194, 255, 0.07) 0px, transparent 55%);
+    background-attachment: fixed;
   }
   button, input, select { font: inherit; }
   button { cursor: pointer; }
@@ -255,7 +258,13 @@
     display: flex; align-items: center; gap: 10px;
     padding: 11px 16px calc(11px + env(safe-area-inset-top)) 16px;
     padding-top: max(11px, env(safe-area-inset-top));
-    background: var(--panel); border-bottom: 1px solid var(--line-soft);
+    background: linear-gradient(to bottom, rgba(16,23,36,0.85) 0%, rgba(16,23,36,0.65) 100%);
+    border-bottom: 1px solid var(--line-soft);
+    box-shadow: 0 4px 24px -6px rgba(0,0,0,0.4), inset 0 -1px 0 0 rgba(255,255,255,0.08);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    position: relative;
+    z-index: 10;
   }
   header h1 { font-size: 16px; margin: 0; flex: 1; letter-spacing: -.01em; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); flex: none; }
@@ -284,17 +293,25 @@
   .dot.stalled { background: var(--bad); box-shadow: 0 0 0 3px rgba(224,69,63,.18); animation: blink-bad 1.6s steps(1, end) infinite; }
 
   nav {
-    display: flex; gap: 2px; padding: 0 10px; overflow-x: auto;
-    background: var(--panel); border-bottom: 1px solid var(--line);
+    display: flex; gap: 6px; padding: 10px; overflow-x: auto;
+    background: linear-gradient(to bottom, rgba(16,23,36,0.65) 0%, rgba(16,23,36,0.25) 100%);
+    border-bottom: 1px solid var(--line-soft);
     scrollbar-width: none; position: sticky; top: 0; z-index: 6;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
   }
   nav::-webkit-scrollbar { display: none; }
   nav button {
-    background: none; border: 0; border-bottom: 2px solid transparent;
-    color: var(--muted); padding: 11px 12px; white-space: nowrap; font-size: 14px; font-weight: 500;
+    background: none; border: 0; border-radius: 99px;
+    color: var(--muted); padding: 7px 14px; white-space: nowrap; font-size: 14px; font-weight: 500;
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-  nav button:hover { color: var(--text); }
-  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  nav button:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  nav button.active {
+    color: #fff;
+    background: linear-gradient(to bottom, rgba(56,189,248,0.15) 0%, rgba(2,132,199,0.05) 100%);
+    box-shadow: inset 0 1px 1px 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(56,189,248,0.2), 0 2px 4px rgba(0,0,0,0.15);
+  }
   nav button .badge {
     display: inline-block; margin-left: 6px; min-width: 7px; height: 7px;
     border-radius: 50%; background: var(--ok); vertical-align: middle;
@@ -316,8 +333,26 @@
     background: var(--panel); border: 1px solid var(--line-soft);
     border-radius: var(--r); padding: 16px;
     transition: border-color .18s;
+    position: relative;
+    backdrop-filter: blur(36px) saturate(190%);
+    -webkit-backdrop-filter: blur(36px) saturate(190%);
+    z-index: 1;
   }
-  .card:hover { border-color: var(--line); }
+  /* Specular rim — the "liquid" highlight */
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(140deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.06) 26%, transparent 52%, rgba(76,194,255,0.13) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .card:hover { border-color: rgba(255,255,255,0.2); }
   main > section { animation: fade-in .18s ease-out; }
   @keyframes fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) {
@@ -490,10 +525,51 @@
     .btn-group { grid-template-columns: repeat(2, 1fr); }
     pre.log { height: min(58dvh, 520px); font-size: 12px; }
   }
+  
+  /* Ambient Orbs */
+  .grid-lines {
+    background-image: linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px),
+                      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(70% 60% at 50% 20%, #000 20%, transparent 80%);
+    mask-image: radial-gradient(70% 60% at 50% 20%, #000 20%, transparent 80%);
+  }
+  .drift { will-change: transform; animation: 22s ease-in-out infinite drift-orb; position: absolute; border-radius: 9999px; filter: blur(64px); }
+  @keyframes drift-orb {
+    0%, 100% { transform: translate(0) scale(1); }
+    50%      { transform: translate(25px, -30px) scale(1.08); }
+  }
+  @media (prefers-reduced-motion: reduce) { .drift { animation: none !important; } }
+  .ambient-orb-1 {
+    width: 380px; height: 380px; top: -140px; left: -140px;
+    background: radial-gradient(circle at center, rgba(34, 174, 247, 0.12) 0%, transparent 70%);
+  }
+  .ambient-orb-2 {
+    width: 440px; height: 440px; top: -180px; right: -120px;
+    background: radial-gradient(circle at center, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+    animation-delay: -7s;
+  }
+  .ambient-orb-3 {
+    width: 320px; height: 320px; top: 180px; left: 30%;
+    background: radial-gradient(circle at center, rgba(76, 194, 255, 0.08) 0%, transparent 70%);
+    animation-delay: -14s;
+  }
+  .ambient-top-fade {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(6, 9, 14, 0) 0%, rgba(6, 9, 14, 0.4) 60%, rgba(6, 9, 14, 1) 100%);
+  }
 </style>
 </head>
 <body>
 
+  <!-- Ambient lighting mesh field -->
+  <div aria-hidden="true" style="pointer-events:none;position:fixed;inset:0;z-index:-10;overflow:hidden">
+    <div class="grid-lines" style="position:absolute;inset:0"></div>
+    <div class="drift ambient-orb-1"></div>
+    <div class="drift ambient-orb-2"></div>
+    <div class="drift ambient-orb-3"></div>
+    <div class="ambient-top-fade"></div>
+  </div>
 <div id="setup">
   <div id="setupBody">
     <div class="card wiz">
@@ -685,7 +761,7 @@
 
     <section id="tab-changelog" hidden>
       <div class="card">
-        <h2>Changelog &amp; Updates <span class="spacer"></span><span class="pill" id="changelogVersion">v2.0.0</span></h2>
+        <h2>Changelog &amp; Updates <span class="spacer"></span><span class="pill" id="changelogVersion">v2.0.2</span></h2>
         <div class="sub">Release history and updates. Automatically synced from GitHub repository.</div>
       </div>
       <div id="changelogBody"></div>
@@ -2347,6 +2423,7 @@ async function loadSettings() {
       STALLED_AFTER_SECONDS: { title: "Stalled Threshold (seconds)", desc: "Seconds without log progress before triggering stall alert." },
       AUTOCONTROL_ADB_PATH: { title: "ADB Executable Path", desc: "Path to adb.exe (leave blank to use AutoClash internal Tools/adb/adb.exe)." },
       AUTOCONTROL_BUTTON_BOTTOM_OFFSET: { title: "Button Bottom Offset", desc: "Pixel offset for AutoClash Pro Start/Pause button clicking (default 24)." },
+      AUTOCONTROL_AUTO_UPDATE_ENABLED: { title: "Auto-Update AutoClash", desc: "Automatically detect AutoClash updates, click Update Now, and restart the bot." },
       DISCORD_ENABLED: { title: "Discord Bot Integration", desc: "Connect to Discord Gateway to post live stats and status embeds." },
       DISCORD_TOKEN: { title: "Discord Bot Token", desc: "Bot application secret token from Discord Developer Portal." },
       DISCORD_CHANNEL_ID: { title: "Default Discord Channel ID", desc: "Channel ID for general status updates and daily summaries." },
@@ -2360,7 +2437,7 @@ async function loadSettings() {
     const sections = [
       {
         title: "⚡ AutoClash & Automation",
-        keys: ["AUTO_RESTART_MODE", "COC_VISUAL_CHECK_ENABLED", "COC_VISUAL_CHECK_INTERVAL_SECONDS", "STALLED_AFTER_SECONDS", "AUTOCONTROL_ADB_PATH", "AUTOCONTROL_BUTTON_BOTTOM_OFFSET"]
+        keys: ["AUTO_RESTART_MODE", "COC_VISUAL_CHECK_ENABLED", "COC_VISUAL_CHECK_INTERVAL_SECONDS", "STALLED_AFTER_SECONDS", "AUTOCONTROL_ADB_PATH", "AUTOCONTROL_BUTTON_BOTTOM_OFFSET", "AUTOCONTROL_AUTO_UPDATE_ENABLED"]
       },
       {
         title: "🤖 Discord Integration",

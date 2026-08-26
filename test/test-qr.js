@@ -11,7 +11,7 @@
 const assert = require("assert");
 const path = require("path");
 
-const qr = require(path.join(__dirname, "public", "qr.js"));
+const qr = require(path.join(__dirname, "..", "public", "qr.js"));
 const { qrMatrix, qrSvg, qrEncodeData, qrPickVersion, QR_EXP, QR_LOG, qrMultiply } = qr;
 
 const SAMPLES = [

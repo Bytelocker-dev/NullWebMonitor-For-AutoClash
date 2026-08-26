@@ -17,7 +17,7 @@ process.chdir(dir);
 process.env.WEB_PASSWORD_HASH = "scrypt$aa$bb";
 process.env.WEB_HOST = "127.0.0.1";
 
-const { startWebServer } = require(path.join(__dirname, "web-server.js"));
+const { startWebServer } = require(path.join(__dirname, "..", "web-server.js"));
 
 const stub = new Proxy({}, {
   get: (_t, name) => {
@@ -54,7 +54,7 @@ blocker.listen(0, "127.0.0.1", () => {
     assert.strictEqual(exitCode, 1, "exits non-zero so the launcher does not silently loop");
 
     blocker.close();
-    process.chdir(__dirname);
+    process.chdir(path.resolve(__dirname, ".."));
     fs.rmSync(dir, { recursive: true, force: true });
     console.log("All port-clash checks passed.");
 

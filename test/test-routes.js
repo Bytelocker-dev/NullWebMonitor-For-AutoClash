@@ -4,7 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SERVER_DIR = __dirname;
+const SERVER_DIR = path.resolve(__dirname, "..");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "smoke-"));
 fs.writeFileSync(path.join(dir, ".env"), "WEB_PASSWORD=hunter2\r\n");
 process.chdir(dir);
@@ -57,6 +57,7 @@ const web = startWebServer({
   runStateCached: () => ({ running: instanceRunning, processCount: instanceRunning ? 3 : 0, version: "2.0.9", adbPort: "16416", account: "accountone", known: true }),
   runState: async () => ({ running: instanceRunning, processCount: instanceRunning ? 3 : 0, version: "2.0.9", adbPort: "16416", account: "accountone", title: "AutoClash Pro v2.0.9 | Android Device-1 (16416) | accountone" }),
   accounts: () => [{ name: "accountone", enabled: true }, { name: "accounttwo", enabled: true }],
+  villages: (instance) => ({ currentAccount: "accountone", currentTownHall: "TH17", accounts: [{ name: "accountone", isActive: true, townHall: "TH17" }] }),
   runtimeStateKeys: () => ["CC_LOOT_CYCLE_START"],
   configEnums: () => ({ SELECTED_ATTACK_STRATEGY: ["valkyrie_1side", "edragon"] }),
   schemaDiff: () => ({ added: ["ZZ_NEW_KEY"], removed: [] }),
@@ -294,6 +295,12 @@ setTimeout(async () => {
 
   r = await call("GET", "/api/push");
   check("push status", r.status === 200 && r.payload.enabled === true);
+
+  r = await call("GET", "/api/villages/main");
+  check("villages returns breakdown", r.status === 200 && r.payload.ok && r.payload.breakdown.currentAccount === "accountone");
+
+  r = await call("GET", "/api/doctor");
+  check("doctor returns diagnostic checks", r.status === 200 && r.payload.ok && Array.isArray(r.payload.results));
 
   r = await call("POST", "/api/logout");
   check("logout ok", r.status === 200);

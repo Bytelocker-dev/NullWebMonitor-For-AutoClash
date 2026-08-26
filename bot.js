@@ -12,11 +12,18 @@ let autoClashUpdateOperation = null;
 let autoClashUpdateBlockedBy = null;
 
 function resolveScriptPath(scriptName) {
-  const inDir = path.join(__dirname, scriptName);
-  if (fs.existsSync(inDir)) return inDir;
-  const inCwd = path.join(process.cwd(), scriptName);
-  if (fs.existsSync(inCwd)) return inCwd;
-  return inDir;
+  const candidates = [
+    path.join(__dirname, "scripts", "powershell", scriptName),
+    path.join(__dirname, "scripts", scriptName),
+    path.join(__dirname, scriptName),
+    path.join(process.cwd(), "scripts", "powershell", scriptName),
+    path.join(process.cwd(), "scripts", scriptName),
+    path.join(process.cwd(), scriptName),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(__dirname, "scripts", "powershell", scriptName);
 }
 
 // Web control panel. webEmit stays a no-op until the panel starts, so the bot
@@ -3252,7 +3259,7 @@ async function detectAccess(port) {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      path.join(__dirname, "detect-access.ps1"),
+      resolveScriptPath("detect-access.ps1"),
       "-Port",
       String(port || 8477),
     ], { cwd: __dirname, timeout: 60000 });
@@ -3398,6 +3405,7 @@ function applySetup(payload) {
   updates.AUTOCONTROL_INSTANCES = instanceParts.join(";");
   updates.LOG_FILES = logParts.join(";");
   updates.AUTOCONTROL_ENABLED = "true";
+  updates.AUTOCONTROL_AUTO_UPDATE_ENABLED = payload.autoUpdate ? "true" : "false";
 
   const adbPath = String(payload.adbPath || "").trim();
   if (adbPath) updates.AUTOCONTROL_ADB_PATH = adbPath;
@@ -4295,6 +4303,38 @@ function parseRecentRaidsForInstance(instance, limit = 20) {
   }
 }
 
+function getVillageStatsBreakdown(instance) {
+  try {
+    const details = resolveInstanceAccountDetails(instance) || {};
+    const accounts = Array.isArray(details.configuredAccounts) ? details.configuredAccounts : [];
+    const current = details.account || (accounts.length ? accounts[0] : "Default");
+
+    return {
+      instanceId: instance.id,
+      instanceLabel: instance.label,
+      currentAccount: current,
+      currentTownHall: details.townHall || "TH17",
+      remainingSeconds: details.remainingSeconds || 0,
+      breakSeconds: details.breakSeconds || 0,
+      isBreak: Boolean(details.isBreak),
+      nextAccount: details.nextAccount || null,
+      accounts: accounts.map((acc) => ({
+        name: acc,
+        isActive: acc === current,
+        townHall: acc === current ? (details.townHall || "TH17") : "TH",
+      })),
+    };
+  } catch (err) {
+    return {
+      instanceId: instance.id,
+      instanceLabel: instance.label,
+      currentAccount: "Default",
+      accounts: [],
+      error: err.message,
+    };
+  }
+}
+
 async function editInteractionEmbed(token, interaction, embed) {
   await discordRequest(token, `/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
     method: "PATCH",
@@ -4950,16 +4990,18 @@ async function startControlGateway(control) {
 }
 
 function printStartupBanner() {
-  console.log(`
-  __  ______  ____  
-  \\ \\/ / __ \\/ __ \\ 
-   \\  / / / / /_/ / 
-   / / /_/ / _, _/  
-  /_/\\____/_/ |_|   
-  ─── XOR WebMonitor v2.0 ───
+  console.log(`\x1b[1;37m
+  ██╗  ██╗     ██████     ██████╗ 
+  ╚██╗██╔╝   ██████████   ██╔══██╗
+   ╚███╔╝    ██\x1b[1;31m██\x1b[1;37m██\x1b[1;31m██\x1b[1;37m██   ██████╔╝
+   ██╔██╗    ██  \x1b[1;30m██\x1b[1;37m  ██   ██╔══██╗
+  ██╔╝ ██╗    ████████    ██║  ██║
+  ╚═╝  ╚═╝     ║ ║ ║ ║    ╚═╝  ╚═╝
+               ▄ ▄ ▄ ▄            
+  \x1b[90m──────────────────────────────────\x1b[0m
+  \x1b[1;36mXOR WebMonitor v2.0.2\x1b[0m
   Self-Hosted Control Panel & Stats Monitor
   `);
-  console.log("Type 'help' in this terminal at any time for available commands.\n");
 }
 
 async function handlePasswordResetCli(newPasswordArg) {
@@ -5515,6 +5557,7 @@ async function main() {
       swipe: (instance, x1, y1, x2, y2, dur) => adbSwipe(control, instance, x1, y1, x2, y2, dur),
       adbAction: (instance, action) => adbQuickAction(control, instance, action),
       raids: (instance, limit) => parseRecentRaidsForInstance(instance, limit),
+      villages: (instance) => getVillageStatsBreakdown(instance),
       pushStatus: () => {
         const push = pushConfig();
         return { enabled: push.enabled, server: push.server, minSeverity: push.minSeverity, topicSet: Boolean(push.topic) };
@@ -5644,6 +5687,31 @@ async function main() {
 
     setInterval(checkAllLogs, config.checkIntervalSeconds * 1000);
 
+    // Dynamic Discord Rich Presence updates
+    setInterval(() => {
+      if (discordRuntime.gateway && discordRuntime.gateway.readyState === 1) {
+        const activeCount = logs.filter((l) => l.status !== "stalled" && l.status !== "finished").length;
+        const total = logs.length;
+        const stateStr = activeCount > 0
+          ? `Farming on ${activeCount}/${total} instance${total > 1 ? "s" : ""}`
+          : "All instances idle";
+
+        discordRuntime.gateway.send(JSON.stringify({
+          op: 3,
+          d: {
+            status: "online",
+            since: Date.now(),
+            afk: false,
+            activities: [{
+              name: "XOR WebMonitor",
+              type: 0,
+              state: stateStr,
+            }],
+          },
+        }));
+      }
+    }, 15000);
+
     runAutoStartSequence(logs, config).catch((error) => {
       console.error("[autostart]", error.message);
     });
@@ -5681,3 +5749,5 @@ if (RESET_FLAG_INDEX !== -1) {
     process.exit(1);
   });
 }
+
+

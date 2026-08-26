@@ -10,7 +10,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const botSource = fs.readFileSync(path.join(__dirname, "bot.js"), "utf8");
+const botSource = fs.readFileSync(path.join(__dirname, "..", "bot.js"), "utf8");
 
 // Pulls one top-level function out of bot.js by scanning to its closing brace.
 function grab(name) {

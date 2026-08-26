@@ -701,6 +701,23 @@ function startWebServer(deps) {
       }
     }
 
+    if (route.startsWith("/api/villages/")) {
+      const instance = deps.resolveInstance(decodeURIComponent(route.slice("/api/villages/".length)));
+      if (!instance) return sendJson(res, 404, { error: "Unknown window." });
+      try {
+        return sendJson(res, 200, { ok: true, breakdown: typeof deps.villages === 'function' ? deps.villages(instance) : {} });
+      } catch (error) {
+        return sendJson(res, 500, { error: error.message });
+      }
+    }
+
+    if (route === "/api/doctor") {
+      try {
+        return sendJson(res, 200, { ok: true, results: typeof deps.doctor === 'function' ? deps.doctor() : [] });
+      } catch (error) {
+        return sendJson(res, 500, { error: error.message });
+      }
+    }
     if (route === "/api/push/test" && req.method === "POST") {
       const status = deps.pushStatus();
       if (!status.enabled) return sendJson(res, 400, { error: "Push is off. Set NTFY_ENABLED=true and NTFY_TOPIC in Settings, then restart." });

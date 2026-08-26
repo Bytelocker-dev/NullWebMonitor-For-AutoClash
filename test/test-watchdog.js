@@ -13,7 +13,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const watchdog = require(path.join(__dirname, "watchdog.js"));
+const watchdog = require(path.join(__dirname, "..", "watchdog.js"));
 
 // --- backoff -----------------------------------------------------------------
 
@@ -74,7 +74,7 @@ const watchdog = require(path.join(__dirname, "watchdog.js"));
 
 async function restartCheck() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "watchdog-"));
-  fs.copyFileSync(path.join(__dirname, "watchdog.js"), path.join(dir, "watchdog.js"));
+  fs.copyFileSync(path.join(__dirname, "..", "watchdog.js"), path.join(dir, "watchdog.js"));
 
   // A monitor that dies immediately, and counts how often it was started.
   fs.writeFileSync(

@@ -191,6 +191,12 @@ function stepOptional() {
     + "The topic name is the only thing protecting it on the public server, so use a long random one.</div>"
     + '<label class="field" style="margin-top:10px">Topic<input type="text" id="wizNtfy" placeholder="leave blank to skip"></label>'
     + '<button class="btn sm" id="wizNtfyGen" style="margin-top:8px">Generate a random topic</button></div>'
+    + '<div class="card" style="margin-top:12px;background:var(--panel-2)">'
+    + '<div class="switch-row">'
+    + '<div><b>AutoClash Auto-Update</b>'
+    + '<div class="sub tiny" style="margin-top:4px">Automatically detect AutoClash updates, click "Update Now", and restart the bot without user interaction.</div></div>'
+    + '<label class="toggle-switch"><input type="checkbox" id="wizAutoUpdate"><span class="toggle-slider"></span></label>'
+    + '</div></div>'
     + '<div class="sub tiny" id="wizSaveErr" style="color:#ff8a85;margin-top:10px"></div>';
 }
 
@@ -378,6 +384,7 @@ async function wizardNext() {
       channelName: ($("#wizDChanName") || {}).value || "",
     },
     ntfy: { topic: ($("#wizNtfy") || {}).value || "" },
+    autoUpdate: ($("#wizAutoUpdate") || {}).checked || false,
   };
 
   const btn = $("#wizNext");

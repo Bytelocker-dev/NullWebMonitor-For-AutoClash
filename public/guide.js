@@ -169,7 +169,7 @@ const GUIDE_SECTIONS = [
 
 function renderGuide() {
   $("#guideBody").innerHTML = GUIDE_SECTIONS.map((section, i) =>
-    '<details class="card guide"' + (i === 0 ? " open" : "") + ">"
+    '<details class="card guide" style="margin-top: 12px"' + (i === 0 ? " open" : "") + ">"
     + "<summary>" + esc(section.title) + "</summary>"
     + '<div class="guide-content">' + section.body + "</div>"
     + "</details>"

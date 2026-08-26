@@ -7,12 +7,14 @@
 **A high-performance, open-source, self-hosted web control panel & monitor for [AutoClash](https://autoclash.net).**  
 Watch and control all your Clash of Clans bots from your phone — live emulator view, lifetime farming statistics, multi-village timers, logs, crash detection, and remote configuration — without opening risky ports to the internet.
 
+[![Version](https://img.shields.io/badge/version-2.0.2-blue.svg)](CHANGELOG.md)
 [![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)](https://github.com/Bytelocker-dev/NullWebMonitor-For-AutoClash-Open-Source-)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Bytelocker-dev/NullWebMonitor-For-AutoClash-Open-Source-/pulls)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org)
 [![PWA Ready](https://img.shields.io/badge/PWA-Ready-purple.svg)](#connecting-from-your-phone)
 [![Tailscale](https://img.shields.io/badge/Tailscale-Mesh%20VPN-blue.svg)](https://tailscale.com)
+[![Tests](https://img.shields.io/badge/tests-17%2F17-brightgreen.svg)](test/)
 
 </div>
 
@@ -35,19 +37,21 @@ Built to provide the Clash of Clans community with an enterprise-grade, self-hos
 
 | Feature | Description |
 |---|---|
+| ✨ **Apple iOS Liquid Glass UI** | Full specular glass surfaces with backdrop blur, rim highlights, and spring physics — across every card, header, nav, button, and toast. Inter + JetBrains Mono fonts throughout. |
 | <img src="public/assets/coc/sword.svg" width="18" height="18" valign="middle"> **Remote Control** | Start, pause, stop, launch, and close AutoClash and your emulators (MuMu / LDPlayer) — per window or across all instances at once. |
 | <img src="public/assets/coc/gold.svg" width="18" height="18" valign="middle"> **All-Time & Daily Stats** | Switch between **Session**, **Daily**, and **All-Time** statistics straight from `stats.db` — tracks lifetime Gold, Elixir, Dark Elixir, walls, obstacles, upgrades, and 14-day trending charts. |
-| <img src="public/assets/coc/th18.svg" width="18" height="18" valign="middle"> **Multi-Village Rotation** | Live tracking of active profiles, detected Town Hall badges (TH1–TH18), break-aware countdown timers (`20:56 left`), and next village indicators (`→ Next: AltVillage`). |
+| <img src="public/assets/coc/th18.svg" width="18" height="18" valign="middle"> **Multi-Village Rotation** | Live tracking of active profiles, detected Town Hall badges (TH1–TH18), break-aware countdown timers, and next village indicators. |
 | <img src="public/assets/coc/shield.svg" width="18" height="18" valign="middle"> **Dual-Mode Live View & Touch/Drag** | Dual-mode streaming with **Data Saver** snapshots and **Ultra-Live Stream** (up to 30 FPS). Interactive touch and drag-to-swipe control directly on your phone. |
 | <img src="public/assets/coc/bh10.svg" width="18" height="18" valign="middle"> **Recent Raids Live Feed** | Real-time attack feed tracking star counts, loot gained, and army composition for both **Home Village** and **Builder Base**. |
 | <img src="public/assets/coc/gem.svg" width="18" height="18" valign="middle"> **ADB Quick-Fix Drawer** | 1-Click remote fixes: restart game, clear cache, enforce standard 1600x900 @ 300 DPI resolution, and reconnect ADB devices. |
-| **Interactive CLI Terminal** | Isolated `xor>` command prompt in the terminal to inspect `status`, `stats`, `instances`, `restart`, or `reset-password` without interruption from bot logs. |
-| **Live Multi-Tab Logs** | Real-time logs for every instance with auto-scroll, search, and a 1-hour health monitor bar showing errors, warnings, and recoveries. |
-| **Visual Incident Logger** | Automatic detection of Clash of Clans connection drops, frozen screens, and bot errors — with instant screenshots saved for review. |
-| **Remote Config Editor** | Edit AutoClash's `config.json` remotely from your phone with atomic saves, backup retention, and one-click rollback. |
-| **Humanized Break Engine** | Detects scheduled breaks and pauses rotation timers with an orange countdown banner so quiet logs are never mistaken for freezes. |
-| **Discord Bot Integration** | Bot with live control buttons, Rich Presence (*"Playing XOR WebMonitor"*), status embeds, all-time stats, and auto-renamed channels (🟢 active / 🟠 break / 🔴 stopped). |
-| **Instant Mobile Access** | Built-in QR codes with one-tap switching between **Tailscale**, **MagicDNS**, and **Home Network (LAN)**. Installable as a native PWA. |
+| **XOR System Doctor** | `npm run doctor` checks Node version, ADB device connectivity, port availability, and Tailscale mesh — plus 1-click in-app diagnostics panel. |
+| **MJPEG Live Stream** | Native `/api/stream/:id` multipart stream for zero-overhead continuous live video without client polling. |
+| **Interactive CLI Terminal** | Isolated `xor>` command prompt to inspect `status`, `stats`, `instances`, `restart`, or `reset-password` without interruption from bot logs. |
+| **Live Multi-Tab Logs** | Real-time logs for every instance with auto-scroll, search, and a health monitor bar. |
+| **Visual Incident Logger** | Auto-detects Clash drops and frozen screens — saves instant screenshots for review. |
+| **Remote Config Editor** | Edit AutoClash's `config.json` from your phone with atomic saves, backups, and one-click rollback. |
+| **Discord Bot Integration** | Rich Presence, live control buttons, all-time stats embeds, and auto-renamed status channels. |
+| **Instant Mobile Access** | QR codes with one-tap Tailscale / LAN switching. Installable as a native PWA. |
 
 ---
 
@@ -136,12 +140,24 @@ Edit AutoClash settings safely from your phone:
 
 ---
 
-## 🧪 Testing & Validation
-
+## 🧪 Diagnostics & Testing
+ 
 Run the comprehensive test suite (17 automated test suites, ~130 assertions):
-
+ 
 ```bash
 npm test
+```
+ 
+Run the 1-Click System Doctor diagnostic check:
+ 
+```bash
+npm run doctor
+```
+ 
+Sweep and clean all temporary test files and caches:
+ 
+```bash
+npm run clean
 ```
 
 Includes unit and integration checks for:

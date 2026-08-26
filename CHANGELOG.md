@@ -4,7 +4,65 @@ All notable changes to **XOR WebMonitor for AutoClash** are documented in this f
 
 ---
 
+## [2.0.2] - 2026-08-26
+
+### ✨ True Apple iOS Liquid Glass UI — Full Implementation
+- **Glass material applied across every surface**: Cards, header, nav bar, instance cards, live screen cards, stat cells, village cards, raid cards, toast notifications, and segmented controls all now carry the full specular glass treatment — not just defined in CSS but actually rendered in the HTML.
+- **Specular rim highlight (`::before` pseudo-element)**: All `.card` elements render a real light-catching rim via the XOR mask-composite technique (`mask-composite: exclude`), replicating the exact specular sheen from the xor.tools reference design.
+- **Header glass bar**: Sticky header upgraded from flat `var(--panel)` to a layered translucent gradient with 40px backdrop blur, specular inset glow, and bottom rim shadow — matches iOS control center frosted glass.
+- **Navigation pill bar**: Tab nav upgraded from flat panel to translucent gradient, pill-shaped tab buttons with glass-pill active state and inner top-highlight.
+- **iOS-grade button system**: `.btn` base upgraded to glass-pill (border-radius: 999px), `.btn.primary` to cyan gradient with specular inset shine matching the xor.tools `btn-primary` spec. Green and red action buttons follow the same pattern.
+- **Segmented controls**: `.seg` pill controls upgraded from flat to glass-pill with inner specular highlight and matching cyan active segment.
+- **Toast notifications**: Glass pill with specular top-rim, 40px blur, smooth spring entrance animation.
+- **High-DPI Branding Suite**: Regenerated crisp transparent `favicon.png`, `apple-touch-icon.png` (180x180), `icon-192.png`, and `icon-512.png`.
+- **Tailwind v4 Pipeline**: Design tokens (`--bg`, `--panel`, `--line`, `--accent`, `--shadow`) compiled via `@tailwindcss/cli` into `public/css/tw.css`.
+- **Unified Aesthetic**: Merged the True Apple iOS Liquid Glass UI effects into the deep blue "Studio Slate" palette. This is now the permanent, hardcoded default theme, removing any legacy layout conflicts and looking incredibly clean.
+
+### 🤖 AutoClash Auto-Updater Integration
+- **Full UI Support**: The `AUTOCONTROL_AUTO_UPDATE_ENABLED` toggle is now fully integrated into the Web Setup Wizard and Settings menu. When enabled, it quietly detects new AutoClash releases, triggers the update process, and restarts the bot automatically without user intervention.
+
+### 🎮 Discord Bot Gateway Modernization
+- **Dynamic Active Farming Presence**: The Discord Gateway Rich Presence now polls on a 15-second loop to display the exact number of active instances running (e.g. `Farming on 2/3 instances`).
+- **Relative Timestamps**: Replaced raw time readouts with dynamic `<t:TIMESTAMP:R>` relative time badges for all paused/break states on the embed.
+
+### 🔤 Font System Fixed
+- **Inter now renders**: Removed the `-apple-system` / `BlinkMacSystemFont` inline `font:` shorthand that overrode Tailwind's `Inter` base layer. Inter and JetBrains Mono now apply globally as intended.
+
+### 🩺 XOR System Doctor (`npm run doctor` & In-App Diagnostics)
+- **1-Click Diagnostic Health Suite**: Interactive CLI (`npm run doctor`) and web-based diagnostics panel checking:
+  - Node.js runtime version compatibility (Node 18+).
+  - Android Debug Bridge (ADB) discovery and attached emulator devices (`127.0.0.1:16384`, `16416`).
+  - Web port availability and firewall status.
+  - Tailscale mesh network connectivity and secure password hash verification.
+
+### ⚡ True MJPEG Live Stream Endpoint (`/api/stream/:id`)
+- **Multipart Video Streaming**: Native `multipart/x-mixed-replace` continuous stream endpoint delivering smooth frames directly to browsers without client-side polling overhead.
+
+### 🚀 PWA Offline & High-Speed Asset Pre-Caching (`public/sw.js`)
+- **Pre-Cached Vector Assets**: Pre-caches all 37 Clash of Clans vector SVG icons, scripts, and stylesheets for instant sub-millisecond mobile launch.
+- **Smart Network Routing**: Keeps all live bot control, stats, and stream routes live-first while serving UI chrome from local cache.
+
+### 🏰 Multi-Village Profiles & Rotation Queue Breakdown
+- **Dedicated Village Overview Card**: Visual roster displaying each configured account profile, detected Town Hall badges (`TH1`–`TH18`), active farming status, break timers, and rotation queue position.
+
+### 🧹 Clean Workspace & Modular Source Reorganization
+- **Organized Architecture**: Reorganized root workspace by relocating test suites to `test/` with unified runner `test/run-all.js` and automation scripts to `scripts/powershell/`.
+- **Automated Workspace Sweep (`npm run clean`)**: Purges temporary test directories, leftover PID markers, and outdated screenshot artifacts with a single command.
+
+### 🐛 Bug Fixes & Polish
+- **Fixed Blank UI Screen**: Resolved an issue where the Web Panel would render completely blank due to missing `.show` display CSS classes.
+- **Advanced Terminal Logo**: Upgraded the standard terminal startup sequence to an aggressive, large-scale Block ASCII rendering of the XOR skull logo with stark ANSI coloring.
+- **Guide Page Accordion Spacing**: Fixed a visual regression on the Setup & User Guide tab where the accordion components were cramped with no vertical gap.
+
+### ✅ Verification
+- **17/17 test suites pass** (`npm test`, 9.99s)
+- **Tailwind v4 compiles** (`npm run build`, 111ms)
+- **Workspace sanitized**: All test HTMLs, temporary `.env` caches, and local configurations successfully purged for open-source distribution.
+
+---
+
 ## [2.0.1] - 2026-08-25
+
 
 ### 🎮 Clash of Clans Vector Game Asset Suite
 - **37 Hand-Crafted CoC SVG Icons**: Replaced all generic emojis with high-resolution vector assets across the Web UI and documentation:
@@ -82,3 +140,5 @@ All notable changes to **XOR WebMonitor for AutoClash** are documented in this f
 - Clash of Clans farming statistics viewer (Session & Daily SQLite breakdown).
 - Discord bot integration with channel status alerts and control panel buttons.
 - Tailscale remote access setup wizard and diagnostic checker.
+
+

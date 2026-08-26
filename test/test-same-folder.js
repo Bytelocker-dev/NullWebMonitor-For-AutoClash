@@ -2,7 +2,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 
-const botSrc = fs.readFileSync(path.join(__dirname, "bot.js"), "utf8");
+const botSrc = fs.readFileSync(path.join(__dirname, "..", "bot.js"), "utf8");
 function grab(name) {
   const match = botSrc.match(new RegExp(`function ${name}\\b[\\s\\S]*?\\n\\}`));
   if (!match) throw new Error(`Function not found: ${name}`);
@@ -29,7 +29,7 @@ new Function("exports", "fs", "path", [
   "exports.writeEnvFile = writeEnvFile;",
 ].join("\n"))(mod, fs, path);
 
-const envFile = path.join(__dirname, ".env");
+const envFile = path.join(__dirname, "..", ".env");
 const originalEnv = fs.existsSync(envFile) ? fs.readFileSync(envFile, "utf8") : null;
 
 try {

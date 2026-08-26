@@ -1,5 +1,5 @@
 const assert = require("assert");
-const { parseChangelog } = require("./web-server");
+const { parseChangelog } = require("../web-server");
 
 const sampleMarkdown = `
 # Changelog

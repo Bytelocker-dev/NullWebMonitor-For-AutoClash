@@ -8,7 +8,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 
-const botSource = fs.readFileSync(path.join(__dirname, "bot.js"), "utf8");
+const botSource = fs.readFileSync(path.join(__dirname, "..", "bot.js"), "utf8");
 
 function grab(name) {
   const lines = botSource.split(/\r?\n/);

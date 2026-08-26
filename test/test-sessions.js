@@ -10,7 +10,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SERVER_DIR = __dirname;
+const SERVER_DIR = path.resolve(__dirname, "..");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sess-"));
 fs.writeFileSync(path.join(dir, ".env"), "WEB_PASSWORD_HASH=scrypt$aa$bb\r\n");
 process.chdir(dir);
