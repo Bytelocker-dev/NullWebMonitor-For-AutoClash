@@ -1055,6 +1055,7 @@ function startWebServer(deps) {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname.startsWith("/api/video/")) {
       const id = decodeURIComponent(url.pathname.slice("/api/video/".length));
+      const format = url.searchParams.get("format") || "h264";
       const instance = deps.resolveInstance(id);
       if (!instance) {
         socket.destroy();
@@ -1066,7 +1067,7 @@ function startWebServer(deps) {
           ws.close();
           return;
         }
-        const stop = deps.startVideo(instance, (chunk) => {
+        const stop = deps.startVideo(instance, format, (chunk) => {
           if (ws.readyState === 1) ws.send(chunk);
         });
         ws.on("close", stop);
@@ -1106,9 +1107,30 @@ function startWebServer(deps) {
     console.log("[web] Reach it over Tailscale at http://<tailscale-name-or-100.x.y.z>:" + port);
   });
 
+    let lastCpu = process.cpuUsage();
+  let lastTime = Date.now();
   const stateTimer = setInterval(() => {
-    if (wss.clients.size) emit({ type: "state", state: stateSnapshot() });
-  }, 5000);
+    if (wss.clients.size) {
+        emit({ type: "state", state: stateSnapshot() });
+        const cpu = process.cpuUsage(lastCpu);
+        const time = Date.now() - lastTime;
+        lastCpu = process.cpuUsage();
+        lastTime = Date.now();
+        const cpuPct = (cpu.user + cpu.system) / (time * 10) * 100;
+        
+        emit({
+            type: "system-stats",
+            at: Date.now(),
+            data: {
+                uptime: process.uptime(),
+                cpu: cpuPct / 100,
+                rss: process.memoryUsage().rss,
+                osTotalMem: require('os').totalmem(),
+                osFreeMem: require('os').freemem()
+            }
+        });
+    }
+  }, 3000);
 
   return {
     emit,
