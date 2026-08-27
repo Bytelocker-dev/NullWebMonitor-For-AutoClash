@@ -5600,26 +5600,26 @@ $delegate = [Win32+EnumWindowsProc]$callback
               }
           }, 2000);
           
-          let jpegBuffer = [];
+          let mjpegBuffer = Buffer.alloc(0);
+          const marker = Buffer.from([0xFF, 0xD8]);
           cp.stdout.on("data", (chunk) => { 
               chunkCount++; 
               if (!active) return;
               if (format === "h264") {
                   onData(chunk);
               } else {
-                  let start = 0;
-                  for (let i = 0; i < chunk.length - 1; i++) {
-                      if (chunk[i] === 0xFF && chunk[i+1] === 0xD8) {
-                          if (jpegBuffer.length > 0 || start > 0) {
-                              jpegBuffer.push(chunk.slice(start, i));
-                              const frame = Buffer.concat(jpegBuffer);
-                              if (frame.length > 0) onData(frame);
-                              jpegBuffer = [];
-                          }
-                          start = i;
+                  mjpegBuffer = Buffer.concat([mjpegBuffer, chunk]);
+                  let first = mjpegBuffer.indexOf(marker);
+                  if (first > 0) mjpegBuffer = mjpegBuffer.slice(first);
+                  while (true) {
+                      const next = mjpegBuffer.indexOf(marker, 2);
+                      if (next !== -1) {
+                          onData(mjpegBuffer.slice(0, next));
+                          mjpegBuffer = mjpegBuffer.slice(next);
+                      } else {
+                          break;
                       }
                   }
-                  jpegBuffer.push(chunk.slice(start));
               }
           });
           
