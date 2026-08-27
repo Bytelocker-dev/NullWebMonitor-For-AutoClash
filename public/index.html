@@ -559,6 +559,7 @@
     background: linear-gradient(to bottom, rgba(6, 9, 14, 0) 0%, rgba(6, 9, 14, 0.4) 60%, rgba(6, 9, 14, 1) 100%);
   }
 </style>
+  <script src="/jmuxer.min.js"></script>
 </head>
 <body>
 
@@ -616,11 +617,7 @@
     <span class="dot" id="liveDot" title="Live connection"></span>
     <img src="/favicon.png" alt="XOR" style="width:22px;height:22px;border-radius:4px;vertical-align:middle">
     <h1>XOR WebMonitor</h1>
-    <select id="themeSelector" class="sub tiny" style="background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:auto;margin-right:8px;font-size:12px">
-      <option value="dark">Stealth Slate</option>
-      <option value="studio">Studio Slate</option>
-      <option value="neon">Cyber Neon</option>
-    </select>
+    
     <button class="btn sm ghost" id="logout">Sign out</button>
   </header>
 
@@ -637,6 +634,7 @@
         <div class="sub">Targets windows marked AutoStart, or every window if none are.</div>
         <div class="btn-group" style="margin-top:13px">
           <button class="btn good" data-global="start">Start all</button>
+          <button class="btn good" data-global="launch" style="background:#20c997; border-color:#20c997;">Launch all</button>
           <button class="btn" data-global="pause">Pause all</button>
           <button class="btn bad" data-global="stop">Stop all</button>
           <button class="btn" data-global="show">Show all</button>
@@ -660,18 +658,20 @@
             <button data-mode="stream">⚡ Ultra-Live</button>
           </span>
           <span class="seg" id="liveRate" style="margin-left:6px">
-            <button data-rate="16" data-for="stream" style="display:none">Max Speed</button>
-            <button data-rate="200" data-for="stream" style="display:none">5 FPS</button>
-            <button data-rate="500" data-for="stream" style="display:none">2 FPS</button>
-            <button data-rate="1000" data-for="saver">1s</button>
-            <button data-rate="2000" data-for="saver" class="on">2s</button>
-            <button data-rate="5000" data-for="saver">5s</button>
-            <button data-rate="0">Pause</button>
+            <button data-rate="0" data-for="stream" style="display:none">Pause</button>
+            <button data-rate="16" data-for="stream" style="display:none">60 FPS</button>
+            <button data-rate="33" data-for="stream" style="display:none" class="on">30 FPS</button>
+            <button data-rate="0" data-for="saver">Pause</button>
+            <button data-rate="200" data-for="saver">5 FPS</button>
+            <button data-rate="500" data-for="saver">2 FPS</button>
+            <button data-rate="1000" data-for="saver" class="on">1 FPS</button>
+            <button data-rate="2000" data-for="saver">0.5 FPS</button>
           </span>
         </h2>
         <div class="sub">Monitor emulators in real time. Switch between Data Saver (bandwidth friendly) and Ultra-Live Stream.</div>
         <div class="btn-row" style="margin-top:12px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
           <button class="btn sm" id="tapToggle">Touch & Drag: off</button>
+          <button class="btn sm" id="focusToggle" onclick="fetch('/api/focus', { method: 'POST', headers: {'X-Session': getSession(), 'Content-Type':'application/json'}, body: JSON.stringify({instanceId: document.querySelectorAll('[data-screen]')[0]?.getAttribute('data-screen')}) }).then(() => toast('Focus command sent.')).catch(e => toast(e.message, true))">👀 Focus Host</button>
           <button class="btn sm" data-keyevent="4">Back</button>
           <button class="btn sm" data-keyevent="3">Home</button>
           <span class="sub tiny" style="color:var(--muted)">| Quick ADB:</span>
@@ -766,7 +766,10 @@
         <div class="header-row" style="padding: 12px 16px; border-bottom: 1px solid var(--line-soft);">
           <h2 style="margin:0">Live ANSI Terminal</h2>
         </div>
-        <pre id="terminal-out" class="terminal-view" style="flex:1; overflow-y:auto; margin:0; padding:16px; background:#000; color:#fff; border-radius: 0 0 9px 9px; font-family: monospace; white-space: pre-wrap; font-size:13px;"></pre>
+        <pre id="terminal-out" class="terminal-view" style="flex:1; overflow-y:auto; margin:0; padding:16px; background:#000; color:#fff; font-family: monospace; white-space: pre-wrap; font-size:13px;"></pre>
+        <div style="background:#0b0f16; padding:12px 16px; border-radius:0 0 9px 9px; display:flex; gap:8px;">
+          <input type="text" id="terminal-in" placeholder="Enter command (e.g. status)..." style="flex:1; background:transparent; border:1px solid var(--line); color:#fff; font-family:monospace; padding:8px; border-radius:6px; outline:none;" onkeydown="if(event.key === 'Enter') { const v = this.value; this.value = ''; fetch('/api/terminal-in', { method: 'POST', headers: {'X-Session': getSession(), 'Content-Type':'application/json'}, body: JSON.stringify({input: v}) }).catch(e => toast(e.message, true)); }">
+        </div>
       </div>
     </section>
 
@@ -837,6 +840,7 @@
         <div class="btn-row" style="margin-top:16px">
           <button class="btn primary" id="saveSettings">Save settings</button>
           <button class="btn" id="reloadSettings">Reload</button>
+          <button class="btn" id="autoDetectInstancesBtn" style="background:#0984e3; border-color:#0984e3; color:#fff;">Auto-detect running instances</button>
           <button class="btn" id="rerunSetupBtn">Re-run Setup Wizard</button>
           <button class="btn bad sm" id="restartMonitorBtn" style="margin-left:auto">Restart monitor</button>
         </div>
@@ -1018,6 +1022,29 @@ function pushLine(name, html) {
 
 function appendEvent(event) {
   const time = `<span class="t">${clock(event.at)}</span>`;
+  if (event.type === "system-stats") {
+    if (activeTab === "about" && $("#ab-uptime")) {
+      const d = event.data;
+      $("#ab-node").textContent = navigator.userAgent.split(" ")[0];
+      $("#ab-uptime").textContent = ago(Date.now() - (d.uptime * 1000));
+      $("#ab-cpu").textContent = d.cpu.toFixed(1) + "%";
+      $("#ab-cpubar").style.width = Math.min(100, d.cpu) + "%";
+      $("#ab-rss").textContent = (d.rss / 1024 / 1024).toFixed(1) + " MB";
+      const total = d.osTotalMem;
+      const free = d.osFreeMem;
+      const used = total - free;
+      $("#ab-osmem").textContent = (used / 1024/1024/1024).toFixed(2) + " GB / " + (total / 1024/1024/1024).toFixed(2) + " GB";
+      $("#ab-membar").style.width = Math.min(100, (used / total) * 100) + "%";
+      
+      const formatNet = (b) => {
+        if (b > 1024*1024) return (b / 1024 / 1024).toFixed(1) + " MB/s";
+        if (b > 1024) return (b / 1024).toFixed(1) + " KB/s";
+        return b + " B/s";
+      };
+      $("#ab-net").textContent = "↓ " + formatNet(d.netRx) + "  ↑ " + formatNet(d.netTx);
+    }
+    return;
+  }
   if (event.type === "lines") {
     event.lines.forEach((line) => pushLine(event.log, `${time} ${esc(line)}`));
     return;
@@ -1048,7 +1075,7 @@ function appendEvent(event) {
 
 function flushLogs() {
   for (const log of state.logs) {
-    const pre = $(`#log-${logSlug(log.name)}`);
+    const pre = document.getElementById(`log-${logSlug(log.name)}`);
     if (!pre) continue;
     const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 80;
     pre.innerHTML = bufferFor(log.name);
@@ -1056,6 +1083,17 @@ function flushLogs() {
       pre.scrollTop = pre.scrollHeight;
       pre._follow = true;
       pre.parentElement.querySelector(".jump")?.classList.remove("show");
+    }
+  }
+  
+  // Also flush the terminal!
+  const termPre = document.getElementById("terminal-out");
+  if (termPre) {
+    const atBottom = termPre.scrollHeight - termPre.scrollTop - termPre.clientHeight < 80;
+    termPre.innerHTML = bufferFor("terminal");
+    if (atBottom || termPre._follow !== false) {
+      termPre.scrollTop = termPre.scrollHeight;
+      termPre._follow = true;
     }
   }
 }
@@ -1339,6 +1377,7 @@ function renderScreens() {
 }
 
 async function grabFrame(instanceId) {
+  if (liveStreamMode === "stream") return;
   const card = $(`[data-screen="${CSS.escape(instanceId)}"]`);
   if (!card) return;
   try {
@@ -1349,6 +1388,7 @@ async function grabFrame(instanceId) {
       throw new Error(err.error || `HTTP ${res.status}`);
     }
     const blob = await res.blob();
+    if (liveStreamMode === "stream" || activeTab !== "live") return;
     const url = URL.createObjectURL(blob);
     let img = card.querySelector(".screen-body img");
     if (!img) {
@@ -1381,8 +1421,8 @@ async function grabFrame(instanceId) {
 }
 
 let liveStreamMode = "saver";
-let savedStreamRate = 16;
-let savedSaverRate = 2000;
+let savedStreamRate = 33;
+let savedSaverRate = 1000;
 
 function updateLiveControls() {
   const isStream = liveStreamMode === "stream";
@@ -1397,30 +1437,111 @@ function updateLiveControls() {
   });
 }
 
+const liveJmuxers = new Map();
+const liveWs = new Map();
+
 function startLive() {
   stopLive();
   if (liveRate === 0) return; // Paused
   for (const instance of state.instances) {
-    const loop = async () => {
-      if (activeTab !== "live" || document.hidden || liveRate === 0) return;
-      await grabFrame(instance.id);
-      if (liveTimers.has(instance.id) && liveRate > 0) {
-        liveTimers.set(instance.id, setTimeout(loop, liveRate));
+    if (liveStreamMode === "stream") {
+      const card = document.querySelector(`[data-screen="${CSS.escape(instance.id)}"]`);
+      if (!card) continue;
+      const body = card.querySelector(".screen-body");
+      
+      const vidId = `live-vid-${CSS.escape(instance.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+      body.innerHTML = `<video id="${vidId}" autoplay muted playsinline style="width:100%;height:100%;object-fit:contain;background:#000;"></video>`;
+      
+      const isIphone = !window.MediaSource && !window.ManagedMediaSource;
+      if (isIphone) {
+          body.innerHTML = `<img id="${vidId}" style="width:100%;height:100%;object-fit:contain;background:#000;" />`;
       }
-    };
-    liveTimers.set(instance.id, setTimeout(loop, 0));
+      const jmuxer = new JMuxer({
+        node: vidId,
+        mode: 'video',
+        flushingTime: 50,
+        fps: 30,
+        debug: false
+      });
+      liveJmuxers.set(instance.id, jmuxer);
+      
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/api/video/${encodeURIComponent(instance.id)}?format=${isIphone ? 'mjpeg' : 'h264'}`);
+      ws.binaryType = 'arraybuffer';
+      ws.onmessage = function(event) {
+        if (event.data.byteLength === 20) {
+            const str = new TextDecoder().decode(event.data).trim();
+            if (str === "SCREENRECORD_CRASHED" || str === "FFMPEG_MISSING" || str === "WINDOW_NOT_FOUND") {
+                const label = card.querySelector("[data-fps]");
+                if (label) { 
+                    label.style.color = "var(--err)"; 
+                    label.classList.remove("stale"); 
+                    if (str === "FFMPEG_MISSING") label.textContent = "FFmpeg missing";
+                    else if (str === "WINDOW_NOT_FOUND") label.textContent = "Desktop Locked or Minimized";
+                    else label.textContent = "Encoder Failed"; 
+                }
+                card.dataset.frameAt = "-1";
+                const body = card.querySelector(".screen-body");
+                if (body) {
+                    if (str === "WINDOW_NOT_FOUND") {
+                        body.innerHTML = '<div class="msg" style="color:var(--err)"><b>Capture Failed</b><br><br>Windows desktop capture (Ultra-Live) cannot record while your PC is locked, asleep, or if the emulator is minimized.<br><br>To view remotely from your phone, switch to <b>Data Saver</b> mode.</div>';
+                    } else if (str === "FFMPEG_MISSING") {
+                        body.innerHTML = '<div class="msg" style="color:var(--err)"><b>FFmpeg Missing</b><br><br>Please install FFmpeg on your PC to use Ultra-Live.</div>';
+                    } else {
+                        body.innerHTML = '<div class="msg" style="color:var(--err)">Capture stream failed.</div>';
+                    }
+                }
+                return;
+            }
+        }
+        if (isIphone) {
+            const blob = new Blob([event.data], { type: 'image/jpeg' });
+            const url = URL.createObjectURL(blob);
+            const img = document.getElementById(vidId);
+            if (img) {
+                if (img.dataset.lastUrl) URL.revokeObjectURL(img.dataset.lastUrl);
+                img.src = url;
+                img.dataset.lastUrl = url;
+            }
+        } else {
+            jmuxer.feed({ video: new Uint8Array(event.data) });
+        }
+        card.setAttribute("data-frame-at", Date.now());
+        card.dataset.fps = "30";
+        card.dataset.frameSize = (event.data.byteLength / 1024).toFixed(0);
+        paintFrameAge(card);
+      };
+      liveWs.set(instance.id, ws);
+      
+    } else {
+      const loop = async () => {
+        if (activeTab !== "live" || document.hidden || liveRate === 0) return;
+        await grabFrame(instance.id);
+        if (liveTimers.has(instance.id) && liveRate > 0) {
+          liveTimers.set(instance.id, setTimeout(loop, liveRate));
+        }
+      };
+      liveTimers.set(instance.id, setTimeout(loop, 0));
+    }
   }
 }
 
 function stopLive() {
   for (const timer of liveTimers.values()) clearTimeout(timer);
   liveTimers.clear();
+  
+  for (const ws of liveWs.values()) ws.close();
+  liveWs.clear();
+  
+  for (const jm of liveJmuxers.values()) jm.destroy();
+  liveJmuxers.clear();
 }
 
 function paintFrameAge(card) {
   const label = card.querySelector("[data-fps]");
   if (!label) return;
   const at = Number(card.dataset.frameAt || 0);
+  if (at === -1) return;
   if (!at) { label.textContent = "connecting..."; return; }
   const seconds = Math.round((Date.now() - at) / 1000);
   const size = card.dataset.frameSize ? `${card.dataset.frameSize} KB` : "0 KB";
@@ -1496,18 +1617,8 @@ async function loadAccess() {
   }
 }
 
-// Theme handling
-const savedTheme = localStorage.getItem("xor-theme") || "dark";
-document.body.setAttribute("data-theme", savedTheme);
-const themeSel = $("#themeSelector");
-if (themeSel) {
-  themeSel.value = savedTheme;
-  themeSel.addEventListener("change", (e) => {
-    document.body.setAttribute("data-theme", e.target.value);
-    localStorage.setItem("xor-theme", e.target.value);
-  });
-}
-
+// Permanent Studio Slate theme
+document.body.setAttribute("data-theme", "studio");
 $("#liveMode")?.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -1568,7 +1679,9 @@ let touchStartData = null;
 
 function computeRatioCoords(img, clientX, clientY) {
   const box = img.getBoundingClientRect();
-  const natural = img.naturalWidth / img.naturalHeight || (16 / 9);
+  const naturalWidth = img.tagName === 'VIDEO' ? img.videoWidth : img.naturalWidth;
+  const naturalHeight = img.tagName === 'VIDEO' ? img.videoHeight : img.naturalHeight;
+  const natural = (naturalWidth / naturalHeight) || (16 / 9);
   const shown = box.width / box.height;
 
   let drawnW = box.width;
@@ -1592,13 +1705,24 @@ function showTouchRipple(x, y) {
   setTimeout(() => ripple.remove(), 500);
 }
 
-$("#screens")?.addEventListener("mousedown", (e) => {
-  if (!tapMode) return;
-  const img = e.target.closest(".screen-body img");
-  if (!img) return;
-  const instanceId = img.closest("[data-screen]").dataset.screen;
-  const coords = computeRatioCoords(img, e.clientX, e.clientY);
-  touchStartData = { instanceId, img, startClientX: e.clientX, startClientY: e.clientY, startX: coords.x, startY: coords.y, time: Date.now() };
+$("#screens")?.addEventListener("mousedown", async (e) => {
+  const media = e.target.closest(".screen-body img, .screen-body video");
+  if (!media) return;
+  const instanceId = media.closest("[data-screen]").dataset.screen;
+  
+  if (!tapMode) {
+    try {
+      const res = await fetch('/api/focus', { method: 'POST', headers: {'X-Session': getSession(), 'Content-Type':'application/json'}, body: JSON.stringify({instanceId}) });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Focus command sent.');
+    } catch(err) {
+      toast(err.message, true);
+    }
+    return;
+  }
+  
+  const coords = computeRatioCoords(media, e.clientX, e.clientY);
+  touchStartData = { instanceId, img: media, startClientX: e.clientX, startClientY: e.clientY, startX: coords.x, startY: coords.y, time: Date.now() };
 });
 
 $("#screens")?.addEventListener("mouseup", async (e) => {
@@ -2131,7 +2255,7 @@ function renderConfig() {
         + '</div>'
       : '<div class="sub">No settings in this section.</div>')
     + '<div class="btn-row" style="margin-top:16px">'
-    + '<button class="btn primary" id="cfgSave"' + (locked || !dirty ? " disabled" : "") + '>Save' + (dirty ? " (" + dirty + ")" : "") + '</button>'
+    + '<select id="cfgPreset" class="btn sm" style="max-width:200px; margin-right:auto; background:var(--panel-2); color:var(--text); border:1px solid var(--line);"><option value="">Load Prebuilt Config...</option><option value="farming">Farming Setup (Gold/Elixir)</option><option value="trophy">Trophy Push (Stars/Safe)</option><option value="clangames">Clan Games Focus</option><option value="builder">Builder Base Priority</option><option value="capital">Capital Raid Weekend</option></select>' + '<button class="btn primary" id="cfgSave"' + (locked || !dirty ? " disabled" : "") + '>Save' + (dirty ? " (" + dirty + ")" : "") + '</button>'
     + '<button class="btn" id="cfgReset"' + (dirty ? "" : " disabled") + '>Discard</button>'
     + '<button class="btn" id="cfgRevert"' + (locked ? " disabled" : "") + '>Restore backup</button>'
     + (dirty ? '<span class="sub tiny dirty" style="align-self:center">' + dirty + ' unsaved change(s)</span>' : "")
@@ -2254,7 +2378,69 @@ $("#tab-config")?.addEventListener("click", async (event) => {
 
 // Text, number and JSON fields commit on change rather than per keystroke, so
 // the form does not re-render while typing.
+
 $("#tab-config")?.addEventListener("change", (event) => {
+  if (event.target.id === "cfgPreset") {
+    const val = event.target.value;
+    event.target.value = "";
+    if (!val) return;
+    if (cfgData.state?.running) {
+      toast("Cannot apply preset while bot is running.", true);
+      return;
+    }
+    const apply = (updates) => {
+      let changed = 0;
+      for (const [k, v] of Object.entries(updates)) {
+        if (cfgData.config[k] !== undefined && JSON.stringify(cfgData.config[k]) !== JSON.stringify(v)) {
+          cfgEdits[k] = v;
+          changed++;
+        }
+      }
+      if (changed > 0) {
+        toast(`Applied ${changed} settings for ${val} preset. Review and click Save.`);
+        renderConfig();
+      } else {
+        toast("Settings already match this preset.");
+      }
+    };
+    if (val === "farming") {
+      apply({
+        "UPGRADE_BUILDINGS_ENABLED": true,
+        "UPGRADE_WALLS_ENABLED": true,
+        "TRAIN_ARMY_ENABLED": true,
+        "ATTACK_MULTIPLAYER_ENABLED": true,
+        "SELECTED_ATTACK_STRATEGY": "Barch",
+      });
+    } else if (val === "trophy") {
+      apply({
+        "ATTACK_MULTIPLAYER_ENABLED": true,
+        "SELECTED_ATTACK_STRATEGY": "Dragon",
+        "WAIT_FOR_HEROES": true,
+        "WAIT_FOR_CLAN_CASTLE": true,
+        "MIN_TROPHIES": 2000,
+      });
+    } else if (val === "clangames") {
+      apply({
+        "CLAN_GAMES_ENABLED": true,
+        "CLAN_GAMES_PRIORITY": "Easy",
+        "TRAIN_ARMY_ENABLED": true,
+      });
+    } else if (val === "builder") {
+      apply({
+        "BUILDER_BASE_ENABLED": true,
+        "BUILDER_ATTACK_ENABLED": true,
+        "UPGRADE_BUILDINGS_ENABLED": true,
+      });
+    } else if (val === "capital") {
+      apply({
+        "CLAN_CAPITAL_ENABLED": true,
+        "CLAN_CAPITAL_ATTACK_ENABLED": true,
+        "CLAN_CAPITAL_FORGE_ENABLED": true,
+      });
+    }
+    return;
+  }
+
   const el = event.target;
   if (el.dataset.cfgkey) {
     cfgNote(el.dataset.cfgkey, el.type === "number" ? Number(el.value) : el.value);
@@ -2322,7 +2508,7 @@ function renderIncidents() {
         : ""
 }
 <div style="margin-top:12px">
-  <button class="btn sm" onclick="navigator.clipboard.writeText('Crash Report:\nTime: ' + new Date(${entry.at}).toISOString() + '\nKind: ${esc(entry.kind)}\nInstance: ${esc(entry.instance || entry.log || '')}\nMessage: ${esc(entry.message)}').then(() => toast('Copied!'))">📋 Copy Crash Report</button>
+  <button class="btn sm" onclick="window.fallbackCopy('Crash Report:\nTime: ' + new Date(${entry.at}).toISOString() + '\nKind: ${esc(entry.kind)}\nInstance: ${esc(entry.instance || entry.log || '')}\nMessage: ${esc(entry.message)}')">📋 Copy Crash Report</button>
 </div>
       </div>`).join("")
     : `<div class="card sub">Nothing recorded yet. Crashes, recoveries and updates will show up here.</div>`;
@@ -2339,20 +2525,21 @@ $("#incidentFilter")?.addEventListener("click", (event) => {
 // ---------- discord ----------
 
 async function loadAbout() {
-  try {
-    const data = await api("/api/system-info");
-    $("#aboutContent").innerHTML = `
-      <div class="row"><b>Monitor Version:</b> <span>${esc(data.version)}</span></div>
-      <div class="row"><b>Node.js:</b> <span>${esc(data.node)}</span></div>
-      <div class="row"><b>Platform:</b> <span>${esc(data.platform)}</span></div>
-      <div class="row"><b>Uptime:</b> <span>${ago(Date.now() - (data.uptime * 1000))}</span></div>
-      <div class="row"><b>Memory (RSS):</b> <span>${(data.rss / 1024 / 1024).toFixed(1)} MB</span></div>
-      <div class="row"><b>Memory (Heap):</b> <span>${(data.heapUsed / 1024 / 1024).toFixed(1)} MB</span></div>
-      <div class="row"><b>OS Free Mem:</b> <span>${(data.osFreeMem / 1024 / 1024 / 1024).toFixed(1)} GB</span></div>
-    `;
-  } catch (error) {
-    if (error.message !== "Signed out.") $("#aboutContent").innerHTML = `<div class="card sub">${esc(error.message)}</div>`;
-  }
+  $("#aboutContent").innerHTML = `
+      <div class="row"><b>Monitor Version:</b> <span id="ab-ver">v2.0.5</span></div>
+      <div class="row"><b>Browser:</b> <span id="ab-node"></span></div>
+      <div class="row"><b>Uptime:</b> <span id="ab-uptime"></span></div>
+      <div class="row" style="margin-top:12px;"><b>CPU Usage:</b> <span id="ab-cpu"></span></div>
+      <div style="background:var(--line-soft);height:6px;border-radius:3px;margin:4px 0 12px;overflow:hidden;">
+        <div id="ab-cpubar" style="background:var(--accent);height:100%;width:0%;transition:width 1s linear;"></div>
+      </div>
+      <div class="row"><b>Memory (RSS):</b> <span id="ab-rss"></span></div>
+      <div class="row"><b>OS Memory:</b> <span id="ab-osmem"></span></div>
+      <div style="background:var(--line-soft);height:6px;border-radius:3px;margin:4px 0 12px;overflow:hidden;">
+        <div id="ab-membar" style="background:var(--ok);height:100%;width:0%;transition:width 1s linear;"></div>
+      </div>
+      <div class="row"><b>Network I/O:</b> <span id="ab-net"></span></div>
+  `;
 }
 async function loadDiscord() {
   try {
@@ -2508,6 +2695,7 @@ async function loadSettings() {
       COC_VISUAL_CHECK_ENABLED: { title: "Visual OCR / Crash Detection", desc: "Detects game disconnects, out of gold, and crash screens automatically." },
       COC_VISUAL_CHECK_INTERVAL_SECONDS: { title: "Visual Check Interval (seconds)", desc: "Seconds between background screen checks (min 15s)." },
       STALLED_AFTER_SECONDS: { title: "Stalled Threshold (seconds)", desc: "Seconds without log progress before triggering stall alert." },
+      EMULATOR_TYPE: { title: "Emulator Type (ldplayer / mumu)", desc: "Set to ldplayer or mumu to enforce emulator control commands." },
       AUTOCONTROL_ADB_PATH: { title: "ADB Executable Path", desc: "Path to adb.exe (leave blank to use AutoClash internal Tools/adb/adb.exe)." },
       AUTOCONTROL_BUTTON_BOTTOM_OFFSET: { title: "Button Bottom Offset", desc: "Pixel offset for AutoClash Pro Start/Pause button clicking (default 24)." },
       AUTOCONTROL_AUTO_UPDATE_ENABLED: { title: "Auto-Update AutoClash", desc: "Automatically detect AutoClash updates, click Update Now, and restart the bot." },

@@ -5498,6 +5498,164 @@ async function main() {
       closeLd: (instance) => closeLdPlayer(control, instance),
       screen: (instance) => captureAdbScreen(control, instance),
       liveFrame: (instance) => captureLiveFrame(control, instance),
+
+      startVideo: (instance, format, onData) => {
+        let active = true;
+        let cp = null;
+        const { spawn } = require('child_process');
+
+        function run(attempt = 0) {
+          if (!active) return;
+          
+          let titleToTry = instance.label;
+          
+          if (attempt === 1) {
+              const kind = emulatorKind(control);
+              const index = emulatorIndexForInstance(kind, instance);
+              const uniqueTitle = instance.id + " - XOR";
+              
+              try {
+                  const script = `
+$ProgressPreference = 'SilentlyContinue'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class Win32 {
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool SetWindowText(IntPtr hWnd, string text);
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+}
+"@
+$callback = {
+    param([IntPtr]$hWnd, [IntPtr]$lParam)
+    if ([Win32]::IsWindowVisible($hWnd)) {
+        $rect = New-Object Win32+RECT
+        [Win32]::GetWindowRect($hWnd, [ref]$rect) | Out-Null
+        $w = $rect.Right - $rect.Left
+        $h = $rect.Bottom - $rect.Top
+        if ($w -gt 0 -and $h -gt 0) {
+            $sb = [System.Text.StringBuilder]::new(256)
+            [Win32]::GetWindowText($hWnd, $sb, $sb.Capacity) | Out-Null
+            $title = $sb.ToString()
+            if ($title -ne "") {
+                if ('Android Device','MuMu Player 12','MuMuPlayer','MuMu Player','${instance.label}','${uniqueTitle}' -contains $title) {
+                    if (${index} -eq 0) {
+                        [Win32]::ShowWindow($hWnd, 9) | Out-Null
+                        [Win32]::SetWindowText($hWnd, '${uniqueTitle}') | Out-Null
+                    }
+                }
+                if ('Android Device-${index}','LDPlayer-${index}','${uniqueTitle}' -contains $title) {
+                    if (${index} -gt 0) {
+                        [Win32]::ShowWindow($hWnd, 9) | Out-Null
+                        [Win32]::SetWindowText($hWnd, '${uniqueTitle}') | Out-Null
+                    }
+                }
+            }
+        }
+    }
+    return $true
+}
+$delegate = [Win32+EnumWindowsProc]$callback
+[Win32]::EnumWindows($delegate, [IntPtr]::Zero) | Out-Null
+`;
+                  const b64 = Buffer.from(script, 'utf16le').toString('base64');
+                  require('child_process').execSync(`powershell -NoProfile -EncodedCommand ${b64}`);
+                  titleToTry = uniqueTitle;
+              } catch (e) {}
+          } else if (attempt > 1) {
+              onData(Buffer.from("WINDOW_NOT_FOUND".padEnd(20, ' ')));
+              active = false;
+              return;
+          }
+          
+          const args = format === "mjpeg" 
+            ? ["-f", "gdigrab", "-framerate", "15", "-i", `title=${titleToTry}`, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "mjpeg", "-q:v", "5", "-f", "image2pipe", "-"]
+            : ["-f", "gdigrab", "-framerate", "30", "-i", `title=${titleToTry}`, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-pix_fmt", "yuv420p", "-f", "h264", "-"];
+          
+          cp = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "ignore"] });
+          
+          let chunkCount = 0;
+          let hangTimer = setTimeout(() => {
+              if (chunkCount === 0 && active) {
+                  if (cp) cp.kill();
+                  run(attempt + 1);
+              }
+          }, 2000);
+          
+          let jpegBuffer = [];
+          cp.stdout.on("data", (chunk) => { 
+              chunkCount++; 
+              if (!active) return;
+              if (format === "h264") {
+                  onData(chunk);
+              } else {
+                  let start = 0;
+                  for (let i = 0; i < chunk.length - 1; i++) {
+                      if (chunk[i] === 0xFF && chunk[i+1] === 0xD8) {
+                          if (jpegBuffer.length > 0 || start > 0) {
+                              jpegBuffer.push(chunk.slice(start, i));
+                              const frame = Buffer.concat(jpegBuffer);
+                              if (frame.length > 0) onData(frame);
+                              jpegBuffer = [];
+                          }
+                          start = i;
+                      }
+                  }
+                  jpegBuffer.push(chunk.slice(start));
+              }
+          });
+          
+          cp.on("error", (err) => {
+              if (err.code === 'ENOENT') {
+                  onData(Buffer.from("FFMPEG_MISSING".padEnd(20, ' ')));
+                  active = false;
+              }
+          });
+          
+          cp.on("exit", (code) => {
+            clearTimeout(hangTimer);
+            if (active) {
+                if (chunkCount === 0) {
+                    run(attempt + 1);
+                } else {
+                    setTimeout(() => run(0), 1000);
+                }
+            }
+          });
+        }
+
+        run();
+
+        return () => {
+          active = false;
+          if (cp) {
+            try { cp.kill('SIGKILL'); } catch(e) {}
+          }
+        };
+      },
+
+
+
+
+
       fullScreen: () => captureFullScreen(),
       discordStatus,
       startDiscord,

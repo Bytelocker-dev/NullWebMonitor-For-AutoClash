@@ -7,7 +7,7 @@
 **A high-performance, open-source, self-hosted web control panel & monitor for [AutoClash](https://autoclash.net).**  
 Watch and control all your Clash of Clans bots from your phone — live emulator view, lifetime farming statistics, multi-village timers, logs, crash detection, and remote configuration — without opening risky ports to the internet.
 
-[![Version](https://img.shields.io/badge/version-2.0.2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.0.5-blue.svg)](CHANGELOG.md)
 [![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=103)](https://github.com/Bytelocker-dev/NullWebMonitor-For-AutoClash-Open-Source-)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Bytelocker-dev/NullWebMonitor-For-AutoClash-Open-Source-/pulls)
@@ -41,12 +41,15 @@ Built to provide the Clash of Clans community with an enterprise-grade, self-hos
 | <img src="public/assets/coc/sword.svg" width="18" height="18" valign="middle"> **Remote Control** | Start, pause, stop, launch, and close AutoClash and your emulators (MuMu / LDPlayer) — per window or across all instances at once. |
 | <img src="public/assets/coc/gold.svg" width="18" height="18" valign="middle"> **All-Time & Daily Stats** | Switch between **Session**, **Daily**, and **All-Time** statistics straight from `stats.db` — tracks lifetime Gold, Elixir, Dark Elixir, walls, obstacles, upgrades, and 14-day trending charts. |
 | <img src="public/assets/coc/th18.svg" width="18" height="18" valign="middle"> **Multi-Village Rotation** | Live tracking of active profiles, detected Town Hall badges (TH1–TH18), break-aware countdown timers, and next village indicators. |
-| <img src="public/assets/coc/shield.svg" width="18" height="18" valign="middle"> **Dual-Mode Live View & Touch/Drag** | Dual-mode streaming with **Data Saver** snapshots and **Ultra-Live Stream** (up to 30 FPS). Interactive touch and drag-to-swipe control directly on your phone. |
+| <img src="public/assets/coc/shield.svg" width="18" height="18" valign="middle"> **Dual-Mode Live View & Touch/Drag** | Dual-mode streaming with **Data Saver** snapshots and **Ultra-Live Stream** (raw H.264 video at 60 FPS!). Interactive touch, drag-to-swipe, and **Click-to-Focus** control directly on your phone. |
+| **Live Task Manager** | Real-time monitoring of CPU Usage, RAM Allocation, OS Memory, Network I/O, and Uptime right from the About tab. |
 | <img src="public/assets/coc/bh10.svg" width="18" height="18" valign="middle"> **Recent Raids Live Feed** | Real-time attack feed tracking star counts, loot gained, and army composition for both **Home Village** and **Builder Base**. |
 | <img src="public/assets/coc/gem.svg" width="18" height="18" valign="middle"> **ADB Quick-Fix Drawer** | 1-Click remote fixes: restart game, clear cache, enforce standard 1600x900 @ 300 DPI resolution, and reconnect ADB devices. |
 | **XOR System Doctor** | `npm run doctor` checks Node version, ADB device connectivity, port availability, and Tailscale mesh — plus 1-click in-app diagnostics panel. |
-| **MJPEG Live Stream** | Native `/api/stream/:id` multipart stream for zero-overhead continuous live video without client polling. |
+| **Ultra-Live Streaming** | Low-latency 30/60 FPS live video powered by raw H.264 FFmpeg websocket injection (with automatic native MJPEG fallback for iPhone iOS Safari). |
 | **Interactive CLI Terminal** | Isolated `xor>` command prompt to inspect `status`, `stats`, `instances`, `restart`, or `reset-password` without interruption from bot logs. |
+| **Prebuilt Configs** | Instantly apply 5 distinct playstyles (Farming Setup, Trophy Push, Clan Games Focus, Builder Base Priority, Capital Raid Weekend) via the Config tab. |
+| **Setup Helper & Auto-Detect** | Automated ADB routing for MuMu/LDPlayer upon first launch, plus 1-click in-app scanning for new emulator instances. |
 | **Live Multi-Tab Logs** | Real-time logs for every instance with auto-scroll, search, and a health monitor bar. |
 | **Visual Incident Logger** | Auto-detects Clash drops and frozen screens — saves instant screenshots for review. |
 | **Remote Config Editor** | Edit AutoClash's `config.json` from your phone with atomic saves, backups, and one-click rollback. |

@@ -4,6 +4,30 @@ All notable changes to **XOR WebMonitor for AutoClash** are documented in this f
 
 ---
 
+
+## [2.0.5] - 2026-08-27
+
+### Added
+- **FFmpeg Ultra-Live Streaming**: The "Ultra-Live" video feed has been completely rebuilt to use FFmpeg desktop capture (`gdigrab`) streaming raw H.264 over WebSockets. This delivers silky-smooth 30-60 FPS gameplay with virtually zero overhead. Also added a smart PowerShell P/Invoke script in the backend to automatically rename emulator windows on-the-fly, completely bypassing invisible "ghost" background windows spawned by MuMu Player that were causing capture failures.
+- **Live View Framerate Controls**: Added new UI toggles allowing you to instantly switch the Ultra-Live stream between **30 FPS** and **60 FPS**, as well as dedicated buttons to tune the Data Saver polling rate between **5 FPS, 2 FPS, 1 FPS, and 0.5 FPS**.
+- **Interactive Live ANSI Terminal**: The Terminal tab is now fully interactive! You can type commands directly into the input bar and see the bot's raw stdout responses in real time.
+- **Live Task Manager**: The *About* tab now features a dynamic Task Manager, streaming real-time metrics including Host CPU Usage, Node.js Memory (RSS), Total OS Memory utilization, Uptime, and a live Network I/O monitor.
+- **Setup Helper**: Added a new Global Emulator Setup selector to the Setup Wizard! New players can now simply select their emulator from a dropdown (LDPlayer 9, MuMu Player 12, Bluestacks 5, etc.) and it will automatically configure the correct ADB path required for Ultra-Live video streaming.
+- **Prebuilt AutoClash Configs**: Added a new Presets dropdown in the Config tab. Instantly apply 5 different playstyles (Farming Setup, Trophy Push, Clan Games Focus, Builder Base Priority, Capital Raid Weekend) to your `config.json` with a single click.
+- **Launch All Instances**: Added a global "Launch all" button to the Control panel to instantly boot up every emulator.
+- **In-App Auto-Detect**: Added an "Auto-detect running instances" button directly to the Settings tab so you can scan for new emulators without re-running the Setup Wizard.
+- **Click-to-Focus**: A new "👀 Focus Host" feature has been added to the Live View tab. When *Touch & Drag* mode is toggled off, clicking anywhere on the video stream will immediately bring the host PC's emulator window to the front.
+
+
+### Fixed
+- **Mobile Safari Clipboard**: Fixed the "Copy Crash Report" button failing on iPhones and Androids when accessing the WebUI via HTTP Tailscale URLs by implementing a legacy clipboard fallback.
+- **iPhone Ultra-Live Detection**: Rebuilt the JMuxer WebSocket player initialization to instantly detect when the browser (like iOS Safari) artificially blocks Media Source Extensions. It now safely halts the stream and prompts the user to use Data Saver mode instead of freezing indefinitely.
+- **FFmpeg Dimension Crashes**: Implemented a dynamic scale filter in the FFmpeg spawn pipeline (`-vf scale=trunc(iw/2)*2`) to prevent libx264 from immediately crashing if the user manually resizes their emulator to an odd pixel width/height.
+- **Ultra-Live Black Screen Fix**: Fixed a silent failure on MuMu where Android's hardware video encoder would crash because the emulator's native resolution wasn't divisible by 16 (macroblocks). Enforced a hardware-scaled `--size 1280x720` pipeline that is universally supported.
+- **Ultra-Live WebSocket Routing**: Fixed a bug where the backend failed to route the video stream WebSocket connection, sending JSON to the video player and causing it to hang on "NaN KB".
+- **Theme Standardization**: Removed the theme selector from Settings and permanently applied the fan-favorite Studio Slate UI across the entire app.
+- **Setup Helper Casing**: Fixed a bug where selecting LDPlayer or MuMu from the Setup Helper didn't correctly write the lowercase identifier to the `.env` file.
+
 ## [2.0.4] - 2026-08-26
 
 ### ⏱️ Incident Burst Time-Lapse & Crash Reporter

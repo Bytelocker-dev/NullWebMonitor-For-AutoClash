@@ -70,6 +70,24 @@ function stepPassword() {
 }
 
 function stepInstances() {
+  const emuOptions = [
+    { name: "Select Emulator...", emu: "", adb: "" },
+    { name: "LDPlayer 9", emu: "ldplayer", adb: "C:\\LDPlayer\\LDPlayer9\\adb.exe" },
+    { name: "LDPlayer 4", emu: "ldplayer", adb: "C:\\LDPlayer\\LDPlayer4.0\\adb.exe" },
+    { name: "MuMu Player 12", emu: "mumu", adb: "C:\\Program Files\\Netease\\MuMuPlayer-12.0\\shell\\adb.exe" },
+    { name: "Bluestacks 5", emu: "bluestacks", adb: "C:\\Program Files\\BlueStacks_nxt\\HD-Adb.exe" },
+    { name: "Custom", emu: "Custom", adb: "C:\\Custom\\adb.exe" }
+  ];
+
+  const emuSelect = '<label class="field" style="margin-top:12px; font-weight:bold; color:var(--accent);">Global Emulator Setup'
+    + '<select id="wizEmuSelect" style="margin-top:6px; margin-bottom: 6px;">'
+    + emuOptions.map(o => '<option value="' + o.emu + '|' + o.adb + '" ' + ((wiz.emulator === o.emu && wiz.adbPath === o.adb) ? 'selected' : '') + '>' + o.name + '</option>').join("")
+    + '</select>'
+    + '</label>'
+    + '<label class="field">ADB Path (Required for Video Streaming)'
+    + '<input type="text" id="wizAdbPath" value="' + esc(wiz.adbPath) + '" placeholder="C:\\Path\\To\\adb.exe"></label>'
+    + '<div style="height:1px; background:var(--line); margin: 16px 0;"></div>';
+
   const rows = wiz.instances.map((inst, i) =>
     '<div class="card" style="margin-top:10px;background:var(--panel-2)">'
     + '<div class="btn-row"><b style="flex:1">Instance ' + (i + 1) + "</b>"
@@ -89,7 +107,7 @@ function stepInstances() {
       + wiz.detected.map((d) => esc(d.suggestedName)).join(", ") + "</div>"
     : "";
 
-  return '<p class="sub">Add each AutoClash window you want to monitor. You can add more later in Settings.</p>'
+  return emuSelect + '<p class="sub">Add each AutoClash window you want to monitor. You can add more later in Settings.</p>'
     + '<div class="btn-row" style="margin-top:10px">'
     + '<button class="btn" id="wizDetect"' + (wiz.busy ? " disabled" : "") + ">Detect running instances</button>"
     + '<button class="btn" id="wizAdd">Add manually</button></div>'
@@ -372,6 +390,14 @@ async function wizardNext() {
     if (wiz.instances[i]) wiz.instances[i].channelName = el.value.trim();
   });
 
+  if (document.getElementById("wizEmuSelect")) {
+    const parts = document.getElementById("wizEmuSelect").value.split('|');
+    wiz.emulator = parts[0] || wiz.emulator;
+  }
+  if (document.getElementById("wizAdbPath")) {
+    wiz.adbPath = document.getElementById("wizAdbPath").value.trim() || wiz.adbPath;
+  }
+  
   const payload = {
     instances: wiz.instances,
     emulator: wiz.emulator,
@@ -403,3 +429,18 @@ async function wizardNext() {
     else toast(error.message, true);
   }
 }
+
+document.addEventListener("change", (e) => {
+  if (e.target.id === "wizEmuSelect") {
+    const parts = e.target.value.split('|');
+    wiz.emulator = parts[0];
+    wiz.adbPath = parts[1];
+    if (parts[1]) {
+        const input = document.getElementById("wizAdbPath");
+        if (input) input.value = parts[1];
+    }
+  }
+  if (e.target.id === "wizAdbPath") {
+    wiz.adbPath = e.target.value.trim();
+  }
+});

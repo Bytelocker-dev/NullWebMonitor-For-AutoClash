@@ -624,6 +624,18 @@ function startWebServer(deps) {
 
     if (route === "/api/events") return sendJson(res, 200, { events: logRing.slice(-200) });
 
+    if (route === "/api/terminal-in" && req.method === "POST") {
+      const body = await readBody(req);
+      const line = String(body.line || "");
+      if (global.executeTerminalCommand) {
+        console.log(`xor> ${line}`);
+        await global.executeTerminalCommand(line);
+        return sendJson(res, 200, { ok: true });
+      } else {
+        return sendJson(res, 500, { error: "Terminal not ready" });
+      }
+    }
+
     if (route === "/api/action" && req.method === "POST") {
       const body = await readBody(req);
       const action = String(body.action || "");
@@ -988,7 +1000,8 @@ function startWebServer(deps) {
         if (instance) return deps.exeAction(action, instance);
         return runOnAllInstances(action);
       case "launch":
-        return deps.launch(instance);
+        if (instance) return deps.launch(instance);
+        return runOnAllInstances(action);
       case "openexe":
         return deps.openExe(instance);
       case "closeexe":
@@ -1038,6 +1051,30 @@ function startWebServer(deps) {
       socket.destroy();
       return;
     }
+    
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname.startsWith("/api/video/")) {
+      const id = decodeURIComponent(url.pathname.slice("/api/video/".length));
+      const instance = deps.resolveInstance(id);
+      if (!instance) {
+        socket.destroy();
+        return;
+      }
+      const videoWss = new WebSocketServer({ noServer: true });
+      videoWss.handleUpgrade(req, socket, head, (ws) => {
+        if (!deps.startVideo) {
+          ws.close();
+          return;
+        }
+        const stop = deps.startVideo(instance, (chunk) => {
+          if (ws.readyState === 1) ws.send(chunk);
+        });
+        ws.on("close", stop);
+        ws.on("error", stop);
+      });
+      return;
+    }
+
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
       ws.send(JSON.stringify({ type: "backlog", events: logRing.slice(-100) }));

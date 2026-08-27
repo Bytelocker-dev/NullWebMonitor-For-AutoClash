@@ -1,6 +1,6 @@
 {
   "name": "xor-webmonitor",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "Self-hosted web control panel for AutoClash — live view, stats, logs, incidents and remote config, reachable from your phone over Tailscale or Cloudflare.",
   "main": "bot.js",
   "scripts": {
