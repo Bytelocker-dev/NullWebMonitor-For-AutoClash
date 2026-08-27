@@ -60,16 +60,24 @@ function processMatches(pid, entry = ENTRY) {
   }
 
   try {
-    const output = execFileSync(
-      "powershell",
-      [
-        "-NoProfile",
-        "-ExecutionPolicy", "Bypass",
-        "-Command",
-        `Get-CimInstance Win32_Process -Filter "ProcessId=${id}" | Select-Object -ExpandProperty CommandLine`,
-      ],
-      { encoding: "utf8", timeout: 10000, windowsHide: true }
-    );
+    let output = "";
+    if (process.platform === "win32") {
+      output = execFileSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy", "Bypass",
+          "-Command",
+          `Get-CimInstance Win32_Process -Filter "ProcessId=${id}" | Select-Object -ExpandProperty CommandLine`,
+        ],
+        { encoding: "utf8", timeout: 10000, windowsHide: true }
+      );
+    } else {
+      output = execFileSync("ps", ["-p", String(id), "-o", "args="], {
+        encoding: "utf8",
+        timeout: 5000,
+      });
+    }
     return output.toLowerCase().includes(String(entry).toLowerCase());
   } catch {
     // No answer means no proof, and no proof means no kill.
