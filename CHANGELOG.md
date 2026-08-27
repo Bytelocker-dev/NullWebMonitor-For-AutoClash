@@ -5,6 +5,16 @@ All notable changes to **XOR WebMonitor for AutoClash** are documented in this f
 ---
 
 
+## [2.0.6] - 2026-08-27
+
+### 🚀 Hotfixes & Enhancements
+- **Native iPhone Ultra-Live Fallback:** Engineered a custom byte-boundary MJPEG streaming parser to seamlessly bypass iOS Safari's aggressive `MediaSource` restrictions, delivering high-speed live view on all iPhones.
+- **Flawless Multi-Instance Detection:** Resolved a PowerShell string injection bug that caused the bot to lose connection to Instance 2. The Auto-Renamer now perfectly hooks and binds to all instances natively.
+- **In-Place Config Sync:** The Config tab now continuously polls the backend and seamlessly updates values in-place (without disrupting your scroll or typing position) while AutoClash writes to the config file in the background.
+- **Config Search Bar:** Added a dedicated search bar at the top of the Config tab, allowing you to instantly filter and locate any of the 139+ settings.
+- **Diagnostics Completed:** Fixed the backend metrics loop, ensuring Host CPU, OS Memory, Node RSS Memory, and Uptime stream reliably to the *About* tab's Live Task Manager.
+- **Mobile Clipboard Patches:** Bypassed strict mobile browser clipboard security policies, ensuring the Crash Report copy button works consistently over Tailscale connections.
+
 ## [2.0.5] - 2026-08-27
 
 ### Added

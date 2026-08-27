@@ -5021,7 +5021,7 @@ function printStartupBanner() {
                              .               ..-+            =  =  = : -.          =             +.
                                                          =:              -      .           .                    ::-=
 
-                                 \x1b[1;36mXOR WebMonitor v2.0.3\x1b[0m
+                                 \x1b[1;36mXOR WebMonitor v2.0.6\x1b[0m
 
 \x1b[1;30mSelf-Hosted Control Panel & Stats Monitor\x1b[0m
 `);
